@@ -12,6 +12,10 @@ lint:
 generate:
 	cd tools; go generate ./...
 
+# Scaffold a new data source, e.g. `make datasource NAME=device`.
+datasource:
+	cd tools; go run ./datasource -name $(NAME)
+
 fmt:
 	gofmt -s -w -e .
 
@@ -21,4 +25,4 @@ test:
 testacc:
 	TF_ACC=1 go test -v -cover -timeout 120m ./...
 
-.PHONY: fmt lint test testacc build install generate
+.PHONY: fmt lint test testacc build install generate datasource
