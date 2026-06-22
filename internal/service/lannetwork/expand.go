@@ -2,6 +2,7 @@ package lannetwork
 
 import (
 	"github.com/Tohaker/omada-go-sdk/omada"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 const (
@@ -37,6 +38,20 @@ func expandDhcpSettings(s *dhcpSettingsModel) *omada.DhcpSettings {
 	}
 }
 
+// expandInterfaceIds converts the Terraform list of interface IDs (gateway LAN
+// port IDs) into the SDK slice. Returns nil when none are configured.
+func expandInterfaceIds(ids []types.String) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id.IsNull() || id.IsUnknown() {
+			continue
+		}
+		out = append(out, id.ValueString())
+	}
+
+	return out
+}
+
 // expandLanNetwork builds the SDK LAN network value sent on Create and Modify.
 // vlanType is fixed to Single and the VLAN tag is taken from vlan_id.
 func expandLanNetwork(plan lanNetworkResourceModel) omada.LanNetworkOpenApiVO {
@@ -53,6 +68,7 @@ func expandLanNetwork(plan lanNetworkResourceModel) omada.LanNetworkOpenApiVO {
 		Vlan:            &vlan,
 		VlanType:        &vlanType,
 		GatewaySubnet:   plan.GatewaySubnet.ValueStringPointer(),
+		InterfaceIds:    expandInterfaceIds(plan.InterfaceIds),
 		Domain:          plan.Domain.ValueStringPointer(),
 		IgmpSnoopEnable: plan.IgmpSnoopEnable.ValueBool(),
 		DhcpSettingsVO:  expandDhcpSettings(plan.DhcpSettings),

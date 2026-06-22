@@ -42,6 +42,7 @@ type lanNetworkResourceModel struct {
 	VlanId          types.Int32        `tfsdk:"vlan_id"`
 	Purpose         types.Int32        `tfsdk:"purpose"`
 	GatewaySubnet   types.String       `tfsdk:"gateway_subnet"`
+	InterfaceIds    []types.String     `tfsdk:"interface_ids"`
 	Domain          types.String       `tfsdk:"domain"`
 	IgmpSnoopEnable types.Bool         `tfsdk:"igmp_snoop_enable"`
 	DhcpSettings    *dhcpSettingsModel `tfsdk:"dhcp_settings"`

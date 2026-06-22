@@ -2,11 +2,13 @@ package lannetwork
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"terraform-provider-omada/internal/client"
 
-	"github.com/Tohaker/omada-go-sdk/omada"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -64,9 +66,9 @@ func (r *lanNetworkResource) Schema(_ context.Context, _ resource.SchemaRequest,
 	resp.Schema = schema.Schema{
 		Description: "Manages an Omada LAN network backed by a single gateway-served VLAN. " +
 			"The Omada gateway terminates the VLAN (purpose \"interface\"), owns the gateway IP, " +
-			"and (optionally) serves DHCP/DNS. Targets the Open API v1 LAN-network surface implemented " +
-			"by controller firmware such as 5.15.x. Requires one of: `Site Settings Manager Modify` or " +
-			"`Network Config Page Modify`.",
+			"binds to gateway LAN ports, and (optionally) serves DHCP/DNS. Targets the Open API v1 " +
+			"LAN-network surface implemented by controller firmware such as 5.15.x. Requires one of: " +
+			"`Site Settings Manager Modify` or `Network Config Page Modify`.",
 		Attributes: map[string]schema.Attribute{
 			"network_id": schema.StringAttribute{
 				Description: "LAN network ID assigned by the controller. Use it (with site_id) as the import target.",
@@ -108,6 +110,12 @@ func (r *lanNetworkResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Description: "Gateway address and mask in CIDR (`IP/Mask`) form, e.g. `192.168.199.1/24`. " +
 					"Required for purpose `interface`; the gateway terminates this VLAN.",
 				Required: true,
+			},
+			"interface_ids": schema.ListAttribute{
+				Description: "Gateway LAN port IDs the network binds to (from the controller's WAN/LAN status " +
+					"endpoint). Required for purpose `interface`; the controller rejects creation with no ports.",
+				ElementType: types.StringType,
+				Optional:    true,
 			},
 			"domain": schema.StringAttribute{
 				Description: "Domain name advertised for this network.",
@@ -160,6 +168,35 @@ func (r *lanNetworkResource) Schema(_ context.Context, _ resource.SchemaRequest,
 	}
 }
 
+// decodeEnvelope reads the (re-readable) response body from an SDK call and
+// decodes the standard Omada envelope leniently. This sidesteps the SDK's strict
+// per-model decoders (which reject fields the controller returns that the SDK
+// model does not know) and recovers the controller's errorCode/msg.
+func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnostics, action string) (omadaEnvelope, bool) {
+	if callErr != nil && httpResp == nil {
+		diags.AddError("Error "+action, "Transport error: "+callErr.Error())
+		return omadaEnvelope{}, false
+	}
+	if httpResp == nil {
+		diags.AddError("Error "+action, "Controller returned no response.")
+		return omadaEnvelope{}, false
+	}
+
+	body, readErr := io.ReadAll(httpResp.Body)
+	if readErr != nil {
+		diags.AddError("Error "+action, "Could not read response body: "+readErr.Error())
+		return omadaEnvelope{}, false
+	}
+
+	var env omadaEnvelope
+	if jsonErr := json.Unmarshal(body, &env); jsonErr != nil {
+		diags.AddError("Error "+action, "Could not decode response: "+jsonErr.Error())
+		return omadaEnvelope{}, false
+	}
+
+	return env, true
+}
+
 // Create creates the resource and sets the initial Terraform state.
 func (r *lanNetworkResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan lanNetworkResourceModel
@@ -169,33 +206,34 @@ func (r *lanNetworkResource) Create(ctx context.Context, req resource.CreateRequ
 		return
 	}
 
-	createResp, _, err := r.client.WiredNetworkAPI.CreateLanNetwork(ctx, r.omadacId, plan.SiteId.ValueString()).
+	_, httpResp, callErr := r.client.WiredNetworkAPI.CreateLanNetwork(ctx, r.omadacId, plan.SiteId.ValueString()).
 		LanNetworkOpenApiVO(expandLanNetwork(plan)).Execute()
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Error creating LAN network",
-			"Could not create LAN network, unexpected error: "+err.Error(),
-		)
+	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "creating LAN network")
+	if !ok {
 		return
 	}
 
-	// The v1 (deprecated) create endpoint returns the new id directly. The
-	// controller may wrap it in the standard {errorCode,msg,result} envelope or
-	// return it bare; prefer the id when present, and otherwise locate the
+	if env.hasError() {
+		respondAPIError(&resp.Diagnostics, "creating LAN network", env.ErrorCode, env.Msg)
+		return
+	}
+
+	// Prefer the id from the create result when present; otherwise locate the
 	// newly-created network by name (names are unique within a site).
-	if createResp != nil && createResp.Id != nil && *createResp.Id != "" {
-		plan.NetworkId = types.StringValue(*createResp.Id)
-	} else if !findLanNetworkByName(ctx, &resp.Diagnostics, r, &plan) {
+	if len(env.Result) > 0 {
+		var cr createResult
+		if err := json.Unmarshal(env.Result, &cr); err == nil && cr.Id != nil && *cr.Id != "" {
+			plan.NetworkId = types.StringValue(*cr.Id)
+		}
+	}
+	if plan.NetworkId.IsNull() && !findLanNetworkByName(ctx, &resp.Diagnostics, r, &plan) {
 		resp.Diagnostics.AddError(
 			"Error creating LAN network",
-			"Create did not return an id and the network was not present in the site afterwards. "+
-				"The controller rejected the request (check the controller log for the validation error).",
+			"Create did not return an id and the network was not present in the site afterwards.",
 		)
 		return
 	}
 
-	// Refresh computed fields from the controller so the state reflects exactly
-	// what was created.
 	if !readLanNetwork(ctx, &resp.Diagnostics, r, &plan) {
 		return
 	}
@@ -215,11 +253,11 @@ func (r *lanNetworkResource) Read(ctx context.Context, req resource.ReadRequest,
 		return
 	}
 
-	found := readLanNetwork(ctx, &resp.Diagnostics, r, &state)
+	readLanNetwork(ctx, &resp.Diagnostics, r, &state)
 
 	// When the network is gone upstream, readLanNetwork clears NetworkId; leave
 	// resp.State unset so Terraform drops it from state.
-	if !found || state.NetworkId.IsNull() {
+	if state.NetworkId.IsNull() {
 		return
 	}
 
@@ -236,7 +274,6 @@ func (r *lanNetworkResource) Update(ctx context.Context, req resource.UpdateRequ
 		return
 	}
 
-	// network_id and site_id are immutable in-place; carry them from state.
 	var state lanNetworkResourceModel
 	diags = req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
@@ -246,18 +283,15 @@ func (r *lanNetworkResource) Update(ctx context.Context, req resource.UpdateRequ
 	plan.NetworkId = state.NetworkId
 	plan.SiteId = state.SiteId
 
-	updateResp, _, err := r.client.WiredNetworkAPI.ModifyLanNetwork(ctx, r.omadacId, plan.SiteId.ValueString(), plan.NetworkId.ValueString()).
+	_, httpResp, callErr := r.client.WiredNetworkAPI.ModifyLanNetwork(ctx, r.omadacId, plan.SiteId.ValueString(), plan.NetworkId.ValueString()).
 		LanNetworkOpenApiVO(expandLanNetwork(plan)).Execute()
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Error updating LAN network",
-			"Could not update LAN network, unexpected error: "+err.Error(),
-		)
+	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "updating LAN network")
+	if !ok {
 		return
 	}
 
-	if updateResp == nil || updateResp.ErrorCode == nil || *updateResp.ErrorCode != 0 {
-		respondAPIError(&resp.Diagnostics, "updating LAN network", updateResp.GetMsg())
+	if env.hasError() {
+		respondAPIError(&resp.Diagnostics, "updating LAN network", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -278,22 +312,16 @@ func (r *lanNetworkResource) Delete(ctx context.Context, req resource.DeleteRequ
 		return
 	}
 
-	deleteResp, _, err := r.client.WiredNetworkAPI.DeleteLanNetwork(ctx, r.omadacId, state.SiteId.ValueString(), state.NetworkId.ValueString()).Execute()
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Error deleting LAN network",
-			"Could not delete LAN network, unexpected error: "+err.Error(),
-		)
+	_, httpResp, callErr := r.client.WiredNetworkAPI.DeleteLanNetwork(ctx, r.omadacId, state.SiteId.ValueString(), state.NetworkId.ValueString()).Execute()
+	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "deleting LAN network")
+	if !ok {
 		return
 	}
 
 	// -33503 (network does not exist) is a successful delete: the resource is
 	// already gone, which is the desired end state.
-	if deleteResp == nil || deleteResp.ErrorCode == nil {
-		return
-	}
-	if *deleteResp.ErrorCode != 0 && *deleteResp.ErrorCode != errNetworkNotFound {
-		respondAPIError(&resp.Diagnostics, "deleting LAN network", deleteResp.GetMsg())
+	if env.hasError() && env.ErrorCode != nil && *env.ErrorCode != errNetworkNotFound {
+		respondAPIError(&resp.Diagnostics, "deleting LAN network", env.ErrorCode, env.Msg)
 		return
 	}
 }
@@ -315,40 +343,31 @@ func (r *lanNetworkResource) ImportState(ctx context.Context, req resource.Impor
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("network_id"), idParts[1])...)
 }
 
-// fetchLanNetworkList fetches the paged LAN-network list for the model's site.
-// Returns the data slice or records an error.
-func fetchLanNetworkList(ctx context.Context, diags *diag.Diagnostics, r *lanNetworkResource, model *lanNetworkResourceModel) []omada.LanNetworkQueryOpenApiVO {
-	listResp, _, err := r.client.WiredNetworkAPI.GetLanNetworkList(ctx, r.omadacId, model.SiteId.ValueString()).
+// fetchLanNetworkList fetches the paged LAN-network list for the model's site and
+// decodes it leniently.
+func fetchLanNetworkList(ctx context.Context, diags *diag.Diagnostics, r *lanNetworkResource, model *lanNetworkResourceModel) []lanNetworkReadRow {
+	_, httpResp, callErr := r.client.WiredNetworkAPI.GetLanNetworkList(ctx, r.omadacId, model.SiteId.ValueString()).
 		Page(1).PageSize(1000).Execute()
-	if err != nil {
+	env, ok := decodeEnvelope(httpResp, callErr, diags, "reading LAN network")
+	if !ok {
+		return nil
+	}
+
+	if env.hasError() {
 		diags.AddError(
 			"Error reading LAN network",
-			"Could not list LAN networks for site "+model.SiteId.ValueString()+": "+err.Error(),
+			fmt.Sprintf("Controller rejected the list for site %s, error code %d: %s", model.SiteId.ValueString(), *env.ErrorCode, env.Msg),
 		)
 		return nil
 	}
 
-	if listResp == nil || listResp.ErrorCode == nil {
-		diags.AddError(
-			"Error reading LAN network",
-			"Controller returned an empty LAN-network list response.",
-		)
+	var lr listResult
+	if err := json.Unmarshal(env.Result, &lr); err != nil {
+		diags.AddError("Error reading LAN network", "Could not decode LAN-network list: "+err.Error())
 		return nil
 	}
 
-	if *listResp.ErrorCode != 0 {
-		diags.AddError(
-			"Error reading LAN network",
-			fmt.Sprintf("Could not list LAN networks for site %s, error code %d: %s", model.SiteId.ValueString(), *listResp.ErrorCode, listResp.GetMsg()),
-		)
-		return nil
-	}
-
-	if listResp.Result == nil {
-		return nil
-	}
-
-	return listResp.Result.Data
+	return lr.Data
 }
 
 // findLanNetworkByName locates the network matching the model's name (used after
@@ -361,9 +380,8 @@ func findLanNetworkByName(ctx context.Context, diags *diag.Diagnostics, r *lanNe
 	}
 
 	for i := range data {
-		row := &data[i]
-		if row.Name == model.Name.ValueString() {
-			model.NetworkId = types.StringPointerValue(row.Id)
+		if data[i].Name == model.Name.ValueString() {
+			model.NetworkId = types.StringPointerValue(data[i].Id)
 			return true
 		}
 	}
@@ -371,11 +389,9 @@ func findLanNetworkByName(ctx context.Context, diags *diag.Diagnostics, r *lanNe
 	return false
 }
 
-// readLanNetwork fetches the LAN-network list, selects the entry matching the
-// model's network_id, and refreshes the model in place. It returns false on
-// error (already recorded in diags) and true when the lookup completed. When the
-// network no longer exists, it clears model.NetworkId so the caller can drop the
-// resource from state.
+// readLanNetwork selects the list entry matching the model's network_id and
+// refreshes the model in place. When the network no longer exists, it clears
+// model.NetworkId so the caller can drop the resource from state.
 func readLanNetwork(ctx context.Context, diags *diag.Diagnostics, r *lanNetworkResource, model *lanNetworkResourceModel) bool {
 	data := fetchLanNetworkList(ctx, diags, r, model)
 	if diags.HasError() {
@@ -385,7 +401,7 @@ func readLanNetwork(ctx context.Context, diags *diag.Diagnostics, r *lanNetworkR
 	for i := range data {
 		row := &data[i]
 		if row.Id != nil && *row.Id == model.NetworkId.ValueString() {
-			flattenLanNetwork(model, row)
+			flattenLanNetworkRead(model, row)
 			return true
 		}
 	}
@@ -397,9 +413,14 @@ func readLanNetwork(ctx context.Context, diags *diag.Diagnostics, r *lanNetworkR
 
 // respondAPIError records a controller-side error (non-zero errorCode) on the
 // given diagnostics.
-func respondAPIError(diags *diag.Diagnostics, action, msg string) {
+func respondAPIError(diags *diag.Diagnostics, action string, code *int32, msg string) {
+	if code == nil {
+		diags.AddError("Error "+action, "Controller rejected the request: "+msg)
+		return
+	}
+
 	diags.AddError(
 		"Error "+action,
-		"Controller rejected the request: "+msg,
+		fmt.Sprintf("Controller rejected the request, error code %d: %s", *code, msg),
 	)
 }

@@ -3,12 +3,12 @@
 page_title: "omada_lan_network Resource - omada"
 subcategory: "Lan"
 description: |-
-  Manages an Omada LAN network backed by a single gateway-served VLAN. The Omada gateway terminates the VLAN (purpose "interface"), owns the gateway IP, and (optionally) serves DHCP/DNS. Targets the Open API v1 LAN-network surface implemented by controller firmware such as 5.15.x. Requires one of: Site Settings Manager Modify or Network Config Page Modify.
+  Manages an Omada LAN network backed by a single gateway-served VLAN. The Omada gateway terminates the VLAN (purpose "interface"), owns the gateway IP, binds to gateway LAN ports, and (optionally) serves DHCP/DNS. Targets the Open API v1 LAN-network surface implemented by controller firmware such as 5.15.x. Requires one of: Site Settings Manager Modify or Network Config Page Modify.
 ---
 
 # omada_lan_network (Resource)
 
-Manages an Omada LAN network backed by a single gateway-served VLAN. The Omada gateway terminates the VLAN (purpose "interface"), owns the gateway IP, and (optionally) serves DHCP/DNS. Targets the Open API v1 LAN-network surface implemented by controller firmware such as 5.15.x. Requires one of: `Site Settings Manager Modify` or `Network Config Page Modify`.
+Manages an Omada LAN network backed by a single gateway-served VLAN. The Omada gateway terminates the VLAN (purpose "interface"), owns the gateway IP, binds to gateway LAN ports, and (optionally) serves DHCP/DNS. Targets the Open API v1 LAN-network surface implemented by controller firmware such as 5.15.x. Requires one of: `Site Settings Manager Modify` or `Network Config Page Modify`.
 
 ## Example Usage
 
@@ -58,6 +58,7 @@ output "example_network_id" {
 - `dhcp_settings` (Attributes) Gateway-served DHCP configuration. Omit for a VLAN with no DHCP served by the gateway. (see [below for nested schema](#nestedatt--dhcp_settings))
 - `domain` (String) Domain name advertised for this network.
 - `igmp_snoop_enable` (Boolean) Enable IGMP snooping on this network. Defaults to `false`.
+- `interface_ids` (List of String) Gateway LAN port IDs the network binds to (from the controller's WAN/LAN status endpoint). Required for purpose `interface`; the controller rejects creation with no ports.
 - `purpose` (Number) LAN network purpose. `1` = interface (the default; a gateway-terminated network with a gateway_subnet), `0` = VLAN only. Changing this forces replacement.
 
 ### Read-Only
