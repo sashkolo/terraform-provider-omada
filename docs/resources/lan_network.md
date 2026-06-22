@@ -3,12 +3,12 @@
 page_title: "omada_lan_network Resource - omada"
 subcategory: "Lan"
 description: |-
-  Manages a Omada LAN network backed by a single gateway-served VLAN. The Omada gateway terminates the VLAN, owns the gateway IP, and (optionally) serves DHCP/DNS. Requires one of: Site Settings Manager Modify or Network Config Page Modify.
+  Manages an Omada LAN network backed by a single gateway-served VLAN. The Omada gateway terminates the VLAN (purpose "interface"), owns the gateway IP, and (optionally) serves DHCP/DNS. Targets the Open API v1 LAN-network surface implemented by controller firmware such as 5.15.x. Requires one of: Site Settings Manager Modify or Network Config Page Modify.
 ---
 
 # omada_lan_network (Resource)
 
-Manages a Omada LAN network backed by a single gateway-served VLAN. The Omada gateway terminates the VLAN, owns the gateway IP, and (optionally) serves DHCP/DNS. Requires one of: `Site Settings Manager Modify` or `Network Config Page Modify`.
+Manages an Omada LAN network backed by a single gateway-served VLAN. The Omada gateway terminates the VLAN (purpose "interface"), owns the gateway IP, and (optionally) serves DHCP/DNS. Targets the Open API v1 LAN-network surface implemented by controller firmware such as 5.15.x. Requires one of: `Site Settings Manager Modify` or `Network Config Page Modify`.
 
 ## Example Usage
 
@@ -49,45 +49,35 @@ output "example_network_id" {
 
 ### Required
 
-- `gateway_subnet` (String) Gateway address and mask in CIDR (`IP/Mask`) form, e.g. `192.168.199.1/24`. Required because the gateway terminates this VLAN.
+- `gateway_subnet` (String) Gateway address and mask in CIDR (`IP/Mask`) form, e.g. `192.168.199.1/24`. Required for purpose `interface`; the gateway terminates this VLAN.
 - `name` (String) LAN network name. Must contain 1 to 128 characters and be unique within the site.
 - `site_id` (String) Site ID to create the network in. Changing this forces replacement.
 - `vlan_id` (Number) 802.1Q VLAN tag for this network. Must be in the range 1-4094 and unused by any other network or WAN interface. Changing this forces replacement.
 
 ### Optional
 
-- `device_type` (Number) DHCP server device type. `1` = gateway (the default and the only value this resource currently exercises), `0` = external, `2` = switch, `3` = none. Changing this forces replacement.
-- `dhcp_server` (Attributes) Gateway-served DHCP configuration. Omit for a VLAN with no DHCP served by the gateway. (see [below for nested schema](#nestedatt--dhcp_server))
+- `dhcp_settings` (Attributes) Gateway-served DHCP configuration. Omit for a VLAN with no DHCP served by the gateway. (see [below for nested schema](#nestedatt--dhcp_settings))
 - `domain` (String) Domain name advertised for this network.
 - `igmp_snoop_enable` (Boolean) Enable IGMP snooping on this network. Defaults to `false`.
+- `purpose` (Number) LAN network purpose. `1` = interface (the default; a gateway-terminated network with a gateway_subnet), `0` = VLAN only. Changing this forces replacement.
 
 ### Read-Only
 
-- `network_id` (String) LAN network ID assigned by the controller. This is the primary identifier; use it as the import target.
+- `network_id` (String) LAN network ID assigned by the controller. Use it (with site_id) as the import target.
 
-<a id="nestedatt--dhcp_server"></a>
-### Nested Schema for `dhcp_server`
-
-Required:
-
-- `ip` (String) DHCP server IP, typically the gateway IP, e.g. `192.168.199.1`.
-- `leasetime` (Number) DHCP lease time in minutes. Must be in the range 2-2880.
-- `netmask` (String) DHCP subnet mask, e.g. `255.255.255.0`.
+<a id="nestedatt--dhcp_settings"></a>
+### Nested Schema for `dhcp_settings`
 
 Optional:
 
+- `dhcpns` (String) DHCP server selection: `auto` or `manual`.
+- `enable` (Boolean) Whether the DHCP server is enabled.
 - `gateway` (String) DHCP gateway IP handed to clients, e.g. `192.168.199.1`.
-- `ip_range_pool` (Attributes List) DHCP address-pool ranges. Omit for a single-pool /24 served from the subnet. (see [below for nested schema](#nestedatt--dhcp_server--ip_range_pool))
+- `ipaddr_end` (String) Last IP in the DHCP range, inclusive.
+- `ipaddr_start` (String) First IP in the DHCP range, inclusive.
+- `leasetime` (Number) DHCP lease time in minutes. Must be in the range 2-2880.
 - `pri_dns` (String) Primary DNS server handed to clients.
 - `snd_dns` (String) Secondary DNS server handed to clients.
-
-<a id="nestedatt--dhcp_server--ip_range_pool"></a>
-### Nested Schema for `dhcp_server.ip_range_pool`
-
-Required:
-
-- `end` (String) Last IP in the range, inclusive.
-- `start` (String) First IP in the range, inclusive.
 
 ## Import
 

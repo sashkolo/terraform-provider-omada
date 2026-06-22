@@ -11,16 +11,15 @@ resource "omada_lan_network" "example" {
   gateway_subnet = "192.168.30.1/24"
   domain         = "iot.local"
 
-  dhcp_server = {
-    gateway   = "192.168.30.1"
-    ip        = "192.168.30.1"
-    netmask   = "255.255.255.0"
-    leasetime = 1440
-    pri_dns   = "192.168.30.1"
-    snd_dns   = "8.8.8.8"
-    ip_range_pool = [
-      { start = "192.168.30.100", end = "192.168.30.250" }
-    ]
+  dhcp_settings = {
+    enable       = true
+    dhcpns       = "manual"
+    gateway      = "192.168.30.1"
+    ipaddr_start = "192.168.30.100"
+    ipaddr_end   = "192.168.30.250"
+    leasetime    = 1440
+    pri_dns      = "192.168.30.1"
+    snd_dns      = "8.8.8.8"
   }
 }
 

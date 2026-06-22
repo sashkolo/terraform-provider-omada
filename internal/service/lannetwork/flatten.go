@@ -5,44 +5,30 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-// flattenDhcpRanges converts the SDK DHCP range list into the Terraform block
-// list.
-func flattenDhcpRanges(r []omada.OswDhcpServerRangeOpenApiVO) []dhcpRangeModel {
-	out := make([]dhcpRangeModel, 0, len(r))
-	for _, r := range r {
-		out = append(out, dhcpRangeModel{
-			StartIp: types.StringValue(r.StartIp),
-			EndIp:   types.StringValue(r.EndIp),
-		})
-	}
-
-	return out
-}
-
-// flattenDhcpServer converts the SDK DHCP server value into the Terraform block.
-// Returns nil when the API reports no gateway-served DHCP server, which keeps
-// the block absent from state (and the plan diff clean) for networks without
-// one.
-func flattenDhcpServer(s *omada.OswDhcpServerOpenApiVO) *dhcpServerModel {
+// flattenDhcpSettings converts the SDK DHCP settings value into the Terraform
+// block. Returns nil when the API reports no DHCP settings, which keeps the
+// block absent from state (and the plan diff clean) for networks without it.
+func flattenDhcpSettings(s *omada.DhcpSettings) *dhcpSettingsModel {
 	if s == nil {
 		return nil
 	}
 
-	return &dhcpServerModel{
+	return &dhcpSettingsModel{
+		Enable:      types.BoolPointerValue(s.Enable),
+		Dhcpns:      types.StringPointerValue(s.Dhcpns),
 		Gateway:     types.StringPointerValue(s.Gateway),
-		Ip:          types.StringPointerValue(&s.Ip),
-		Netmask:     types.StringPointerValue(&s.Netmask),
-		Leasetime:   types.Int32PointerValue(&s.Leasetime),
+		IpaddrStart: types.StringPointerValue(s.IpaddrStart),
+		IpaddrEnd:   types.StringPointerValue(s.IpaddrEnd),
+		Leasetime:   types.Int32PointerValue(s.Leasetime),
 		PriDns:      types.StringPointerValue(s.PriDns),
 		SndDns:      types.StringPointerValue(s.SndDns),
-		IpRangePool: flattenDhcpRanges(s.IpRangePool),
 	}
 }
 
-// flattenLanNetwork overwrites the resource model from the SDK read response.
-// network_id and site_id are preserved from the prior state because Get is
-// keyed by them; the remaining fields are refreshed from the controller.
-func flattenLanNetwork(m *lanNetworkResourceModel, r *omada.LanNetworkQueryOpenApiV3VO) {
+// flattenLanNetwork overwrites the resource model from the SDK read row.
+// network_id and site_id are preserved from the prior state (Read is keyed by
+// them); the remaining fields are refreshed from the controller.
+func flattenLanNetwork(m *lanNetworkResourceModel, r *omada.LanNetworkQueryOpenApiVO) {
 	if r == nil {
 		return
 	}
@@ -50,9 +36,9 @@ func flattenLanNetwork(m *lanNetworkResourceModel, r *omada.LanNetworkQueryOpenA
 	m.NetworkId = types.StringPointerValue(r.Id)
 	m.Name = types.StringPointerValue(&r.Name)
 	m.VlanId = types.Int32PointerValue(r.Vlan)
+	m.Purpose = types.Int32Value(r.Purpose)
 	m.GatewaySubnet = types.StringPointerValue(r.GatewaySubnet)
 	m.Domain = types.StringPointerValue(r.Domain)
 	m.IgmpSnoopEnable = types.BoolValue(r.IgmpSnoopEnable)
-	m.DeviceType = types.Int32Value(r.DeviceType)
-	m.DhcpServer = flattenDhcpServer(r.DhcpServer)
+	m.DhcpSettings = flattenDhcpSettings(r.DhcpSettingsVO)
 }
