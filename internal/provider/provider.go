@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"terraform-provider-omada/internal/client"
+	"terraform-provider-omada/internal/service/lannetwork"
 	"terraform-provider-omada/internal/service/site"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -282,5 +283,6 @@ func (p *omadaProvider) DataSources(_ context.Context) []func() datasource.DataS
 func (p *omadaProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		site.NewResource,
+		lannetwork.NewResource,
 	}
 }
