@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"terraform-provider-omada/internal/client"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -261,7 +262,9 @@ func (r *aclResource) Create(ctx context.Context, req resource.CreateRequest, re
 	}
 
 	// Prefer the id from the create result when present (aclId or generic id);
-	// otherwise locate the newly-created ACL by description.
+	// otherwise locate the newly-created ACL by description. The controller's ACL
+	// state is eventually consistent, so both lookups retry briefly to tolerate
+	// the post-create propagation lag.
 	if len(env.Result) > 0 {
 		var cr createResult
 		if err := json.Unmarshal(env.Result, &cr); err == nil {
@@ -272,7 +275,7 @@ func (r *aclResource) Create(ctx context.Context, req resource.CreateRequest, re
 			}
 		}
 	}
-	if plan.AclId.IsNull() && !findAclByDescription(ctx, &resp.Diagnostics, r, &plan) {
+	if plan.AclId.IsNull() && !awaitFindAclByDescription(ctx, &resp.Diagnostics, r, &plan) {
 		resp.Diagnostics.AddError(
 			"Error creating ACL",
 			"Create did not return an id and the ACL was not present in the site afterwards.",
@@ -280,7 +283,11 @@ func (r *aclResource) Create(ctx context.Context, req resource.CreateRequest, re
 		return
 	}
 
-	if !readAcl(ctx, &resp.Diagnostics, r, &plan) {
+	if !awaitReadAcl(ctx, &resp.Diagnostics, r, &plan) {
+		resp.Diagnostics.AddError(
+			"Error creating ACL",
+			"The ACL was created but could not be read back within the retry window.",
+		)
 		return
 	}
 
@@ -341,7 +348,7 @@ func (r *aclResource) Update(ctx context.Context, req resource.UpdateRequest, re
 		return
 	}
 
-	if !readAcl(ctx, &resp.Diagnostics, r, &plan) {
+	if !awaitReadAcl(ctx, &resp.Diagnostics, r, &plan) {
 		return
 	}
 
@@ -420,45 +427,91 @@ func fetchAclList(ctx context.Context, diags *diag.Diagnostics, r *aclResource, 
 	return lr.Data
 }
 
-// findAclByDescription locates the ACL matching the model's description (used
-// after create when the id is not returned). Sets model.AclId on success; returns
-// false if not found.
-func findAclByDescription(ctx context.Context, diags *diag.Diagnostics, r *aclResource, model *aclResourceModel) bool {
+// findAclInList fetches the paged gateway ACL list and returns the entry matching
+// the model's acl_id (nil if not present). It does not mutate the model.
+func findAclInList(ctx context.Context, diags *diag.Diagnostics, r *aclResource, model *aclResourceModel) *aclReadRow {
 	data := fetchAclList(ctx, diags, r, model)
 	if diags.HasError() {
-		return false
+		return nil
 	}
-
+	want := model.AclId.ValueString()
 	for i := range data {
-		if data[i].Description == model.Description.ValueString() {
-			model.AclId = types.StringValue(data[i].Id)
-			return true
+		if data[i].Id == want {
+			return &data[i]
 		}
 	}
-
-	return false
+	return nil
 }
 
-// readAcl selects the list entry matching the model's acl_id and refreshes the
-// model in place. When the ACL no longer exists, it clears model.AclId so the
-// caller can drop the resource from state.
-func readAcl(ctx context.Context, diags *diag.Diagnostics, r *aclResource, model *aclResourceModel) bool {
-	data := fetchAclList(ctx, diags, r, model)
-	if diags.HasError() {
-		return false
+// readAcl refreshes the model from the list entry matching acl_id. Used by the
+// Read (refresh) path: when the ACL is gone upstream, it clears AclId so the
+// framework drops the resource from state. Create/Update use awaitReadAcl so the
+// create-returned id is preserved across the post-create propagation lag.
+func readAcl(ctx context.Context, diags *diag.Diagnostics, r *aclResource, model *aclResourceModel) {
+	if row := findAclInList(ctx, diags, r, model); row != nil {
+		flattenAclRead(model, row)
+		return
 	}
+	model.AclId = types.StringNull()
+}
 
-	for i := range data {
-		row := &data[i]
-		if row.Id == model.AclId.ValueString() {
+// awaitReadAcl retries the list read until the ACL is present, refreshing the
+// model in place. The controller's ACL state is eventually consistent, so a
+// freshly created/modified ACL may take a moment to appear in the list. It never
+// clears acl_id: the caller (Create/Update) already knows the id. A propagation
+// lag is not an API error (the list returns success), so no diagnostic is added
+// while retrying; a persistent real error surfaces after the budget is spent.
+func awaitReadAcl(ctx context.Context, diags *diag.Diagnostics, r *aclResource, model *aclResourceModel) bool {
+	return runWithBackoff(ctx, func() bool {
+		if row := findAclInList(ctx, diags, r, model); row != nil {
 			flattenAclRead(model, row)
 			return true
 		}
-	}
+		return false
+	})
+}
 
-	// Not present in the list: the ACL is gone upstream.
-	model.AclId = types.StringNull()
-	return true
+// awaitFindAclByDescription retries the description-based list lookup until the
+// ACL is present, setting model.AclId. Used after create when the create
+// response omitted the id.
+func awaitFindAclByDescription(ctx context.Context, diags *diag.Diagnostics, r *aclResource, model *aclResourceModel) bool {
+	return runWithBackoff(ctx, func() bool {
+		data := fetchAclList(ctx, diags, r, model)
+		if diags.HasError() {
+			return false
+		}
+		for i := range data {
+			if data[i].Description == model.Description.ValueString() {
+				model.AclId = types.StringValue(data[i].Id)
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// readAttempts/readInterval bound the post-create read retry. The controller is
+// expected to reflect a create within a few seconds; this is a safety margin,
+// not a long poll.
+const (
+	readAttempts = 10
+	readInterval = 750 * time.Millisecond
+)
+
+// runWithBackoff repeats fn until it returns true or the attempt budget is
+// exhausted. It honors context cancellation between attempts.
+func runWithBackoff(ctx context.Context, fn func() bool) bool {
+	for attempt := 0; attempt < readAttempts; attempt++ {
+		if fn() {
+			return true
+		}
+		select {
+		case <-time.After(readInterval):
+		case <-ctx.Done():
+			return false
+		}
+	}
+	return false
 }
 
 // respondAPIError records a controller-side error (non-zero errorCode) on the

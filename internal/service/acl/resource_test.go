@@ -3,6 +3,7 @@ package acl_test
 import (
 	"encoding/json"
 	"net/http"
+	"sync/atomic"
 	"terraform-provider-omada/internal/acctest"
 	"testing"
 
@@ -58,14 +59,25 @@ func TestAcc_AclResource(t *testing.T) {
 		_, _ = w.Write([]byte(body))
 	}
 
+	// listReads counts GET list calls so the handler can simulate the
+	// controller's post-create propagation lag (the new ACL is absent from the
+	// first list read, then appears). This exercises the resource's retry path.
+	var listReads int32
+
 	// Create (POST .../acls/osg-acls): the controller wraps the new id (aclId)
 	// in the standard envelope.
 	mux.HandleFunc("POST /openapi/v1/{omadacId}/sites/{siteId}/acls/osg-acls", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, `{"errorCode":0,"msg":"","result":{"aclId":"test-acl-id"}}`)
 	})
 
-	// Read (GET .../acls/osg-acls, paged list).
+	// Read (GET .../acls/osg-acls, paged list). The first read returns an empty
+	// list (propagation lag); later reads return the row. This mirrors the live
+	// controller behavior the resource's awaitReadAcl retry absorbs.
 	mux.HandleFunc("GET /openapi/v1/{omadacId}/sites/{siteId}/acls/osg-acls", func(w http.ResponseWriter, _ *http.Request) {
+		if atomic.AddInt32(&listReads, 1) == 1 {
+			writeJSON(w, `{"errorCode":0,"msg":"","result":{"totalRows":0,"currentPage":1,"currentSize":1000,"data":[]}}`)
+			return
+		}
 		writeJSON(w, listResponse())
 	})
 
