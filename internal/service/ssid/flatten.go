@@ -6,15 +6,21 @@ import "github.com/hashicorp/terraform-plugin-framework/types"
 // The securityKey is preserved from the prior model when the controller masks
 // it (firmware policy may omit it), so Terraform never sees a false PSK drift
 // and the sensitive value is never lost from state.
+//
+// When the controller returns no pskSetting at all (open / enterprise / PPSK
+// modes that carry no PSK), the prior model is returned unchanged: nil stays
+// nil so a config that omits psk_setting stays null in state (no empty-block
+// drift). This nil-check must come before the m== nil initialization below.
 func flattenPskRead(m *pskSettingModel, r *pskReadVO) *pskSettingModel {
-	if m == nil {
-		m = &pskSettingModel{}
-	}
-
 	if r == nil {
 		// No pskSetting upstream: keep whatever the operator configured. The
-		// controller simply does not echo PSK state for non-PSK security modes.
+		// controller does not echo PSK state for non-PSK security modes, so a
+		// nil prior model (psk_setting omitted) stays nil -> null in state.
 		return m
+	}
+
+	if m == nil {
+		m = &pskSettingModel{}
 	}
 
 	// Preserve the prior PSK when the controller masks the key; otherwise
