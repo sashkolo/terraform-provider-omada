@@ -262,9 +262,9 @@ func (r *aclResource) Create(ctx context.Context, req resource.CreateRequest, re
 	}
 
 	// Prefer the id from the create result when present (aclId or generic id);
-	// otherwise locate the newly-created ACL by description. The controller's ACL
-	// state is eventually consistent, so both lookups retry briefly to tolerate
-	// the post-create propagation lag.
+	// otherwise fall back to a description-based list lookup below. The
+	// controller's ACL state is eventually consistent, so the lookup retries
+	// briefly to tolerate the post-create propagation lag.
 	if len(env.Result) > 0 {
 		var cr createResult
 		if err := json.Unmarshal(env.Result, &cr); err == nil {
@@ -275,7 +275,11 @@ func (r *aclResource) Create(ctx context.Context, req resource.CreateRequest, re
 			}
 		}
 	}
-	if plan.AclId.IsNull() && !awaitFindAclByDescription(ctx, &resp.Diagnostics, r, &plan) {
+
+	// acl_id is Computed, so it is Unknown (not Null) at create time. Treat both
+	// as "not yet known" so the description-based list lookup runs when the create
+	// response omitted the id (the live controller returns no result on create).
+	if (plan.AclId.IsUnknown() || plan.AclId.IsNull()) && !awaitFindAclByDescription(ctx, &resp.Diagnostics, r, &plan) {
 		resp.Diagnostics.AddError(
 			"Error creating ACL",
 			"Create did not return an id and the ACL was not present in the site afterwards.",

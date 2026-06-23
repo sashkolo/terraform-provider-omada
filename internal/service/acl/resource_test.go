@@ -64,10 +64,11 @@ func TestAcc_AclResource(t *testing.T) {
 	// first list read, then appears). This exercises the resource's retry path.
 	var listReads int32
 
-	// Create (POST .../acls/osg-acls): the controller wraps the new id (aclId)
-	// in the standard envelope.
+	// Create (POST .../acls/osg-acls): the live controller returns only
+	// {"errorCode":0,"msg":"Success."} with no result/id, so the resource must
+	// recover the new id from the subsequent list read by description.
 	mux.HandleFunc("POST /openapi/v1/{omadacId}/sites/{siteId}/acls/osg-acls", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, `{"errorCode":0,"msg":"","result":{"aclId":"test-acl-id"}}`)
+		writeJSON(w, `{"errorCode":0,"msg":"Success."}`)
 	})
 
 	// Read (GET .../acls/osg-acls, paged list). The first read returns an empty
