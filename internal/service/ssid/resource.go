@@ -199,6 +199,10 @@ func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnost
 		diags.AddError("Error "+action, "Controller returned no response.")
 		return omadaEnvelope{}, false
 	}
+	// The generated SDK already drains + NopCloser-rewraps Body before returning
+	// it, so Close() here is a defensive no-op; kept for hygiene and robustness
+	// against future SDK changes.
+	defer httpResp.Body.Close()
 
 	body, readErr := io.ReadAll(httpResp.Body)
 	if readErr != nil {
