@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"terraform-provider-omada/internal/client"
+	"terraform-provider-omada/internal/service/acl"
 	"terraform-provider-omada/internal/service/lannetwork"
 	"terraform-provider-omada/internal/service/site"
 	"terraform-provider-omada/internal/service/ssid"
@@ -288,5 +289,6 @@ func (p *omadaProvider) Resources(_ context.Context) []func() resource.Resource 
 		lannetwork.NewResource,
 		wlangroup.NewResource,
 		ssid.NewResource,
+		acl.NewResource,
 	}
 }
