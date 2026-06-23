@@ -54,3 +54,37 @@ func TestFlattenPskRead_ReadRefreshesKey(t *testing.T) {
 
 func ptrInt32(v int32) *int32 { return &v }
 func ptrBool(v bool) *bool    { return &v }
+
+// TestFlattenSsidRead_ClearsStalePskForNonPskModes locks the fix for the
+// stale-psk drift: when the controller reports a non-PSK security mode, any
+// prior psk_setting block must be cleared from state so it does not linger
+// after an out-of-band PSK -> open/enterprise change. For PSK mode the key is
+// still refreshed (or preserved when masked).
+func TestFlattenSsidRead_ClearsStalePskForNonPskModes(t *testing.T) {
+	t.Parallel()
+
+	// Out-of-band PSK -> open: prior state had a psk_setting; controller now
+	// reports security=0 with no pskSetting. State must drop psk_setting.
+	m := &ssidResourceModel{
+		Security:   types.Int32Value(3),
+		PskSetting: &pskSettingModel{Psk: types.StringValue("stale")},
+	}
+	flattenSsidRead(m, &ssidDetailReadVO{Security: ptrInt32(0)})
+	if m.PskSetting != nil {
+		t.Fatalf("non-PSK read left stale psk_setting in state: %+v", m.PskSetting)
+	}
+	if m.Security.ValueInt32() != 0 {
+		t.Fatalf("Security = %d, want 0", m.Security.ValueInt32())
+	}
+
+	// PSK mode with the controller masking the key (no pskSetting upstream):
+	// prior key is preserved.
+	m2 := &ssidResourceModel{
+		Security:   types.Int32Value(3),
+		PskSetting: &pskSettingModel{Psk: types.StringValue("keep-me")},
+	}
+	flattenSsidRead(m2, &ssidDetailReadVO{Security: ptrInt32(3)})
+	if m2.PskSetting == nil || m2.PskSetting.Psk.ValueString() != "keep-me" {
+		t.Fatalf("PSK mode with masked key did not preserve prior PSK: %+v", m2.PskSetting)
+	}
+}
