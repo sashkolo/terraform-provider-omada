@@ -7,15 +7,15 @@ import "github.com/hashicorp/terraform-plugin-framework/types"
 // it (firmware policy may omit it), so Terraform never sees a false PSK drift
 // and the sensitive value is never lost from state.
 //
-// When the controller returns no pskSetting at all (open / enterprise / PPSK
-// modes that carry no PSK), the prior model is returned unchanged: nil stays
-// nil so a config that omits psk_setting stays null in state (no empty-block
-// drift). This nil-check must come before the m== nil initialization below.
+// This is only called for WPA-Personal SSIDs (security == 3); callers must
+// clear psk_setting for other modes (see flattenSsidRead). When the controller
+// returns no pskSetting at all, the prior model is returned unchanged so a
+// masked key is not lost. This nil-check must come before the m == nil init.
 func flattenPskRead(m *pskSettingModel, r *pskReadVO) *pskSettingModel {
 	if r == nil {
-		// No pskSetting upstream: keep whatever the operator configured. The
-		// controller does not echo PSK state for non-PSK security modes, so a
-		// nil prior model (psk_setting omitted) stays nil -> null in state.
+		// No pskSetting upstream for a PSK SSID: the controller is masking the
+		// key. Keep the prior model so the sensitive value is not lost. (For
+		// non-PSK modes the caller clears psk_setting directly.)
 		return m
 	}
 
@@ -35,6 +35,11 @@ func flattenPskRead(m *pskSettingModel, r *pskReadVO) *pskSettingModel {
 
 	return m
 }
+
+// securityPersonal is the WPA-Personal (PSK) security mode: the only mode that
+// carries a psk_setting. All other modes (open, enterprise, PPSK) must not keep
+// a psk_setting block in state.
+const securityPersonal int32 = 3
 
 // flattenSsidRead overwrites the resource model from a lenient detail read.
 // ssid_id, site_id and wlan_group_id are preserved from the prior state (Read
@@ -57,5 +62,15 @@ func flattenSsidRead(m *ssidResourceModel, r *ssidDetailReadVO) {
 	m.MloEnable = types.BoolPointerValue(r.MloEnable)
 	m.HidePwd = types.BoolPointerValue(r.HidePwd)
 	m.DeviceType = types.Int32PointerValue(r.DeviceType)
-	m.PskSetting = flattenPskRead(m.PskSetting, r.PskSetting)
+
+	// psk_setting only applies to WPA-Personal. For any other mode the
+	// controller returns no pskSetting; clear it from state so a stale block
+	// does not linger after an out-of-band PSK -> non-PSK mode change. For PSK
+	// mode, flatten normally (preserving the prior key if the controller masks
+	// it on read).
+	if r.Security != nil && *r.Security != securityPersonal {
+		m.PskSetting = nil
+	} else {
+		m.PskSetting = flattenPskRead(m.PskSetting, r.PskSetting)
+	}
 }
