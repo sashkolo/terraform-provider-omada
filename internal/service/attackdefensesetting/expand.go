@@ -61,7 +61,7 @@ func flattenSpecifiedOption(s *specifiedOptionReadVO) *specifiedOptionModel {
 	return &specifiedOptionModel{
 		NoOperationEnable:    types.BoolPointerValue(s.NoOperationEnable),
 		RecordRouteEnable:    types.BoolPointerValue(s.RecordRouteEnable),
-		SecurityOptionEnable: types.BoolPointerValue(s.SecurityOptionEnable),
+		SecurityOptionEnable: types.BoolPointerValue(s.SecurityEnable),
 		StreamEnable:         types.BoolPointerValue(s.StreamEnable),
 		TimestampEnable:      types.BoolPointerValue(s.TimestampEnable),
 	}

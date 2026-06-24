@@ -26,13 +26,16 @@ func (e omadaEnvelope) hasError() bool {
 }
 
 // specifiedOptionReadVO mirrors the controller's specifiedOption shape (all
-// optional pointers).
+// optional pointers). NOTE: the controller returns "securityEnable" for the
+// security-option toggle, while the SDK model (SpecifiedOptionOpenApiVO) uses
+// the codegen name "securityOptionEnable"; the read VO uses the controller's
+// actual key so the value round-trips into state (see flattenSpecifiedOption).
 type specifiedOptionReadVO struct {
-	NoOperationEnable    *bool `json:"noOperationEnable,omitempty"`
-	RecordRouteEnable    *bool `json:"recordRouteEnable,omitempty"`
-	SecurityOptionEnable *bool `json:"securityOptionEnable,omitempty"`
-	StreamEnable         *bool `json:"streamEnable,omitempty"`
-	TimestampEnable      *bool `json:"timestampEnable,omitempty"`
+	NoOperationEnable *bool `json:"noOperationEnable,omitempty"`
+	RecordRouteEnable *bool `json:"recordRouteEnable,omitempty"`
+	SecurityEnable    *bool `json:"securityEnable,omitempty"`
+	StreamEnable      *bool `json:"streamEnable,omitempty"`
+	TimestampEnable   *bool `json:"timestampEnable,omitempty"`
 }
 
 // attackDefenseReadVO is a lenient, provider-local view of the attack-defense
