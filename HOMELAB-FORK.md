@@ -12,7 +12,8 @@ checksum-verified filesystem mirror.
 - **Fork base:** upstream `v0.2.0`.
 - **Homelab resources:** `omada_lan_network` (v0.3.0, homelab #53),
   `omada_ssid` + `omada_wlan_group` (v0.4.0, homelab #54),
-  `omada_acl` (v0.7.0, homelab #55).
+  `omada_acl` (v0.7.0, homelab #55),
+  `omada_firewall_setting` + `omada_attack_defense_setting` (v0.7.3, homelab #56).
 - **Decision + consumption model:** documented in the homelab repo at
   `docs/network/OMADA-TERRAFORM.md`.
 - **Upstreaming:** changes here that are not homelab-specific should be offered

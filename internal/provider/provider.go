@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"terraform-provider-omada/internal/client"
 	"terraform-provider-omada/internal/service/acl"
+	"terraform-provider-omada/internal/service/attackdefensesetting"
+	"terraform-provider-omada/internal/service/firewallsetting"
 	"terraform-provider-omada/internal/service/lannetwork"
 	"terraform-provider-omada/internal/service/site"
 	"terraform-provider-omada/internal/service/ssid"
@@ -290,5 +292,7 @@ func (p *omadaProvider) Resources(_ context.Context) []func() resource.Resource 
 		wlangroup.NewResource,
 		ssid.NewResource,
 		acl.NewResource,
+		firewallsetting.NewResource,
+		attackdefensesetting.NewResource,
 	}
 }
