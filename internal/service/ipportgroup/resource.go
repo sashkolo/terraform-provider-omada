@@ -186,6 +186,14 @@ func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnost
 		return omadaEnvelope{}, false
 	}
 
+	// A transport/HTTP error (non-2xx) whose body decoded but carries no
+	// errorCode (e.g. a reverse-proxy error page shaped as JSON) would otherwise
+	// slip past hasError() and be treated as success; surface it instead.
+	if callErr != nil && env.ErrorCode == nil {
+		diags.AddError("Error "+action, "API call failed: "+callErr.Error())
+		return omadaEnvelope{}, false
+	}
+
 	return env, true
 }
 
