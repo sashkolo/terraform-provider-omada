@@ -187,7 +187,10 @@ func (r *ipGroupResource) Create(ctx context.Context, req resource.CreateRequest
 			plan.GroupId = types.StringValue(*cr.Id)
 		}
 	}
-	if plan.GroupId.IsNull() && !findGroupByName(ctx, &resp.Diagnostics, r, &plan) {
+	// group_id is Computed, so it is Unknown (not Null) at create time. Treat both
+	// as "not yet known" so the name-based fallback runs if the create response
+	// ever omits the id (mirrors the omada_acl create-id recovery, fork v0.7.2).
+	if (plan.GroupId.IsUnknown() || plan.GroupId.IsNull()) && !findGroupByName(ctx, &resp.Diagnostics, r, &plan) {
 		resp.Diagnostics.AddError(
 			"Error creating IP group",
 			"Create did not return an id and the group was not present in the site afterwards.",
