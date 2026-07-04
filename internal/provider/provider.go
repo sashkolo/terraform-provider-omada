@@ -13,6 +13,8 @@ import (
 	"terraform-provider-omada/internal/service/lannetwork"
 	"terraform-provider-omada/internal/service/site"
 	"terraform-provider-omada/internal/service/ssid"
+	"terraform-provider-omada/internal/service/switchport"
+	"terraform-provider-omada/internal/service/switchportprofile"
 	"terraform-provider-omada/internal/service/wlangroup"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -294,5 +296,7 @@ func (p *omadaProvider) Resources(_ context.Context) []func() resource.Resource 
 		acl.NewResource,
 		firewallsetting.NewResource,
 		attackdefensesetting.NewResource,
+		switchportprofile.NewResource,
+		switchport.NewResource,
 	}
 }
