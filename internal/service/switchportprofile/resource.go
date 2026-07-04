@@ -209,7 +209,14 @@ func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnost
 
 	var env omadaEnvelope
 	if jsonErr := json.Unmarshal(body, &env); jsonErr != nil {
-		diags.AddError("Error "+action, "Could not decode response: "+jsonErr.Error())
+		msg := "Could not decode response: " + jsonErr.Error()
+		if callErr != nil {
+			// The controller likely returned a non-JSON body (HTML error page,
+			// empty body) alongside an HTTP/transport error; surface it so the
+			// real status code is not lost behind a generic parse error.
+			msg += fmt.Sprintf(" (original error: %s)", callErr.Error())
+		}
+		diags.AddError("Error "+action, msg)
 		return omadaEnvelope{}, false
 	}
 

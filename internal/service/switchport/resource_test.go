@@ -3,6 +3,7 @@ package switchport_test
 import (
 	"encoding/json"
 	"net/http"
+	"sync/atomic"
 	"terraform-provider-omada/internal/acctest"
 	"testing"
 
@@ -51,22 +52,37 @@ func TestAcc_SwitchPortResource(t *testing.T) {
 		_, _ = w.Write([]byte(body))
 	}
 
+	// patchCalls distinguishes the create-time modify (first PATCH, no prior
+	// state) from the update-time modify (later PATCHes). On create the
+	// clobber-sensitive attributes must be omitted; on update UseStateForUnknown
+	// legitimately supplies their state values, so they may be present.
+	var patchCalls int32
+
 	// Modify (PATCH .../switches/{mac}/ports/{port}): decode the body and reflect
 	// the profile assignment change into the port row.
 	mux.HandleFunc("PATCH /openapi/v1/{omadacId}/sites/{siteId}/switches/{switchMac}/ports/{port}", func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			ProfileId *string `json:"profileId"`
-			Name      *string `json:"name"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var raw map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if req.ProfileId != nil && *req.ProfileId != "" {
-			portRow["profileId"] = *req.ProfileId
+		// Regression guard for the singleton clobber fix: on the CREATE modify
+		// the config sets neither name nor disabled, so a correct expand omits
+		// them. Their presence would mean unset Optional attributes are being
+		// serialized to zero values that wipe live port state.
+		if atomic.AddInt32(&patchCalls, 1) == 1 {
+			for _, k := range []string{"name", "disable"} {
+				if _, present := raw[k]; present {
+					writeJSON(w, `{"errorCode":-1,"msg":"unexpected `+k+` in create body: unset attribute must be omitted"}`)
+					return
+				}
+			}
 		}
-		if req.Name != nil && *req.Name != "" {
-			portRow["name"] = *req.Name
+		if v, ok := raw["profileId"]; ok {
+			var pid string
+			if json.Unmarshal(v, &pid) == nil && pid != "" {
+				portRow["profileId"] = pid
+			}
 		}
 		writeJSON(w, emptyResponse)
 	})

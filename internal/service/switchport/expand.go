@@ -20,27 +20,47 @@ const (
 	opSwitching = "switching"
 )
 
-// expandPort builds the SDK per-port setting sent on Create and Modify. Only the
-// fields the resource models are set; the controller preserves the rest of the
-// port configuration. profileOverrideEnable follows the plan so the port keeps
-// (or clears) its custom fill mode as declared.
+// expandPort builds the SDK per-port setting sent on Create and Modify.
+//
+// This resource is a singleton that modifies an always-existing physical port,
+// so the write must not clobber live settings the plan does not specify. Optional
+// attributes that are Null/Unknown are therefore sent as nil pointers, which the
+// controller treats as "leave unchanged" — the value is then read back and saved
+// to state. Only profile_id (Required) is always sent; poe falls back to the
+// "do not modify" mode when unset so PoE is never disturbed implicitly.
 func expandPort(plan switchPortResourceModel) omada.OswPortSettingVO {
 	profileId := plan.ProfileId.ValueString()
-	name := plan.Name.ValueString()
+	operation := opSwitching
+
+	var name *string
+	if !plan.Name.IsNull() && !plan.Name.IsUnknown() {
+		n := plan.Name.ValueString()
+		name = &n
+	}
+
 	poe := poeModeDoNotModify
 	if !plan.Poe.IsNull() && !plan.Poe.IsUnknown() {
 		poe = plan.Poe.ValueInt32()
 	}
-	override := plan.ProfileOverrideEnable.ValueBool()
-	disable := plan.Disabled.ValueBool()
-	operation := opSwitching
+
+	var override *bool
+	if !plan.ProfileOverrideEnable.IsNull() && !plan.ProfileOverrideEnable.IsUnknown() {
+		o := plan.ProfileOverrideEnable.ValueBool()
+		override = &o
+	}
+
+	var disable *bool
+	if !plan.Disabled.IsNull() && !plan.Disabled.IsUnknown() {
+		d := plan.Disabled.ValueBool()
+		disable = &d
+	}
 
 	return omada.OswPortSettingVO{
-		Name:                  &name,
+		Name:                  name,
 		ProfileId:             &profileId,
-		ProfileOverrideEnable: &override,
+		ProfileOverrideEnable: override,
 		Poe:                   &poe,
-		Disable:               &disable,
+		Disable:               disable,
 		Operation:             &operation,
 	}
 }
