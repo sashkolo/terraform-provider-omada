@@ -1,3 +1,16 @@
+## 0.9.0
+
+FEATURES:
+- Added `omada_ip_group` resource: a reusable, named set of IP hosts/subnets
+  (Open API group profile, type 0) that gateway ACL rules reference by group id
+  via `source_type`/`destination_type = 1` instead of hard-coding whole-VLAN
+  networks. Full CRUD + import against the Open API v1 `profiles/groups` surface
+  (homelab #155).
+- Added `omada_ip_port_group` resource: a named set of IP hosts/subnets scoped
+  to TCP/UDP ports (group profile type 1), referenced by ACLs via
+  `source_type`/`destination_type = 2`. Supports both port-list (`port_type` 0)
+  and port-mask (`port_type` 1) modes. Full CRUD + import (homelab #155).
+
 ## 0.8.0
 
 FEATURES:

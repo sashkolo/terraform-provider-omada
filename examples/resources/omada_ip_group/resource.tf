@@ -1,0 +1,31 @@
+# Site ID that owns the group. Provide it via a variable or data source so the
+# value is not hard-coded in checked-in configurations.
+variable "site_id" {
+  type = string
+}
+
+# A reusable IP group: one or more hosts/subnets an ACL can reference by group id
+# (source_type/destination_type = 1) instead of hard-coding whole-VLAN networks.
+# Here: two VIGI camera hosts on the outdoor VLAN.
+resource "omada_ip_group" "vigi_cameras" {
+  site_id     = var.site_id
+  name        = "vigi-cameras"
+  description = "VIGI camera hosts"
+
+  ip_list = [
+    { ip = "192.168.30.51", mask = 32, description = "cam-porch" },
+    { ip = "192.168.30.52", mask = 32, description = "cam-drive" },
+  ]
+}
+
+# Reference the group id from a gateway ACL:
+#
+#   resource "omada_acl" "example" {
+#     # ...
+#     destination_type = 1 # IP Group
+#     destination_ids  = [omada_ip_group.vigi_cameras.group_id]
+#   }
+
+output "vigi_cameras_group_id" {
+  value = omada_ip_group.vigi_cameras.group_id
+}
