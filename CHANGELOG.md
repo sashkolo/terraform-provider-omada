@@ -1,3 +1,14 @@
+## 0.10.0
+
+FEATURES:
+- Added `omada_gateway_acl_order` resource: a per-site singleton that owns the
+  deterministic, site-global evaluation order of gateway (OSG) ACL rules via
+  `ModifyAclIndex` (type `gateway`). `ordered_acl_ids` must be exhaustive — every
+  gateway ACL id, highest priority first — so an out-of-band or unlisted rule is
+  rejected rather than silently reordered. Read reflects the live order (drift
+  detection); Delete is a no-op (ordering is intrinsic); import is by `site_id`.
+  This is the building block for allow-before-deny policy (homelab #156).
+
 ## 0.9.1
 
 FIXES:
