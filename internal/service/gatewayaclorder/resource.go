@@ -218,6 +218,14 @@ func (r *gatewayAclOrderResource) applyOrder(ctx context.Context, diags *diag.Di
 	want := make([]string, 0, len(plan.OrderedAclIds))
 	seen := make(map[string]bool, len(plan.OrderedAclIds))
 	for _, v := range plan.OrderedAclIds {
+		if v.IsNull() || v.IsUnknown() {
+			diags.AddError(
+				"Invalid gateway ACL order",
+				"ordered_acl_ids contains a null or unknown element; every entry must be a known gateway ACL id "+
+					"(e.g. omada_acl.<name>.acl_id of an already-created rule).",
+			)
+			return false
+		}
 		id := v.ValueString()
 		if seen[id] {
 			diags.AddError("Invalid gateway ACL order", fmt.Sprintf("ordered_acl_ids contains duplicate id %q.", id))

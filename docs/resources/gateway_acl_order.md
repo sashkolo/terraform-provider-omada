@@ -30,7 +30,7 @@ resource "omada_gateway_acl_order" "home" {
   site_id = var.site_id
 
   ordered_acl_ids = [
-    omada_acl.camera_allow.acl_id,       # allow, evaluated first
+    omada_acl.camera_allow.acl_id, # allow, evaluated first
     omada_acl.outdoor_deny_management.acl_id,
     omada_acl.outdoor_deny_personal.acl_id,
     omada_acl.outdoor_deny_public.acl_id,
