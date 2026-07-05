@@ -143,6 +143,12 @@ func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnost
 		diags.AddError("Error "+action, "Controller returned no response.")
 		return omadaEnvelope{}, false
 	}
+	// net/http guarantees a non-nil Body for a non-nil Response, but a mocked
+	// transport or SDK anomaly could return one with a nil Body; guard the read.
+	if httpResp.Body == nil {
+		diags.AddError("Error "+action, "Controller returned a response with no body.")
+		return omadaEnvelope{}, false
+	}
 	defer httpResp.Body.Close()
 
 	body, readErr := io.ReadAll(httpResp.Body)
@@ -311,6 +317,10 @@ func (r *reservationResource) Delete(ctx context.Context, req resource.DeleteReq
 		if !probeDiags.HasError() && !found {
 			return
 		}
+		// The probe itself failed (or the reservation is still present); surface
+		// the original delete error, plus any probe error context so a network or
+		// auth failure during the re-read is not silently dropped.
+		resp.Diagnostics.Append(probeDiags...)
 		respondAPIError(&resp.Diagnostics, "deleting DHCP reservation", env.ErrorCode, env.Msg)
 		return
 	}
@@ -386,15 +396,25 @@ func readReservation(ctx context.Context, diags *diag.Diagnostics, r *reservatio
 		return false
 	}
 
+	want := normalizeMAC(model.Mac.ValueString())
 	for i := range rows {
 		row := &rows[i]
-		if row.Mac != nil && strings.EqualFold(*row.Mac, model.Mac.ValueString()) {
+		if row.Mac != nil && normalizeMAC(*row.Mac) == want {
 			flattenReservationRead(model, row)
 			return true
 		}
 	}
 
 	return false
+}
+
+// normalizeMAC lowercases a MAC and strips the common separators so matching is
+// insensitive to both case and delimiter style (`AA-BB-...`, `aa:bb:...`,
+// `aabb...`). The controller returns dash-separated uppercase MACs and the
+// schema documents that format, but normalizing keeps Read/import from silently
+// missing a reservation the operator entered with a different separator.
+func normalizeMAC(s string) string {
+	return strings.ToLower(strings.NewReplacer("-", "", ":", "", ".", "").Replace(s))
 }
 
 // respondAPIError records a controller-side error (non-zero errorCode) on the

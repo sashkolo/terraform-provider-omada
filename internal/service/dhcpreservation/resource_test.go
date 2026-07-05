@@ -191,3 +191,54 @@ func TestAcc_DhcpReservationResource_CreateWithoutId(t *testing.T) {
 		},
 	})
 }
+
+// TestAcc_DhcpReservationResource_MacSeparatorNormalization asserts the Read
+// match is insensitive to MAC case and separator style: the config uses
+// dash-uppercase, the grid returns colon-lowercase, and the reservation must
+// still be found (no spurious removal / re-create in the follow-up plan).
+func TestAcc_DhcpReservationResource_MacSeparatorNormalization(t *testing.T) {
+	ts := acctest.NewTestServer(t)
+	mux := ts.Mux
+
+	// Grid returns the MAC colon-separated and lowercased — a different style
+	// than the dash-uppercase MAC in the configuration.
+	row := map[string]any{
+		"id":      "sep-reservation-id",
+		"mac":     "e8:6b:ea:ed:97:3c",
+		"ip":      "192.168.20.13",
+		"netId":   "personal-net-id",
+		"netName": "Personal",
+		"status":  true,
+	}
+
+	mux.HandleFunc("POST /openapi/v1/{omadacId}/sites/{siteId}/setting/service/dhcp", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, `{"errorCode":0,"msg":"Success.","result":{"id":"sep-reservation-id"}}`)
+	})
+	mux.HandleFunc("GET /openapi/v1/{omadacId}/sites/{siteId}/setting/service/dhcp", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, gridResponse(row))
+	})
+	mux.HandleFunc("DELETE /openapi/v1/{omadacId}/sites/{siteId}/setting/service/dhcp/{mac}", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, `{ "errorCode": 0, "msg": "" }`)
+	})
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: ts.ProviderConfig + `
+				resource "omada_dhcp_reservation" "test" {
+					site_id = "test-site-id"
+					mac     = "E8-6B-EA-ED-97-3C"
+					ip      = "192.168.20.13"
+					net_id  = "personal-net-id"
+				}
+				`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "reservation_id", "sep-reservation-id"),
+					// mac is preserved as configured (not overwritten by the read).
+					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "mac", "E8-6B-EA-ED-97-3C"),
+				),
+			},
+		},
+	})
+}
