@@ -57,7 +57,7 @@ output "vigi_cameras_group_id" {
 
 ### Optional
 
-- `description` (String) Optional group description (1 to 256 characters). Do not store secrets here.
+- `description` (String) Optional group description (1 to 256 characters). Do not store secrets here. The controller stores this but does not return it in the group list read, so it is preserved from configuration rather than refreshed from the API, and is not recoverable on a bare import.
 
 ### Read-Only
 

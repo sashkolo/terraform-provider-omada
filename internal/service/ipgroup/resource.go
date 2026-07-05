@@ -97,8 +97,11 @@ func (r *ipGroupResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				Required:    true,
 			},
 			"description": schema.StringAttribute{
-				Description: "Optional group description (1 to 256 characters). Do not store secrets here.",
-				Optional:    true,
+				Description: "Optional group description (1 to 256 characters). Do not store secrets here. " +
+					"The controller stores this but does not return it in the group list read, so it is " +
+					"preserved from configuration rather than refreshed from the API, and is not recoverable " +
+					"on a bare import.",
+				Optional: true,
 			},
 			"ip_list": schema.ListNestedAttribute{
 				Description: "Ordered list of IP hosts/subnets the group matches. Provide at least one " +
