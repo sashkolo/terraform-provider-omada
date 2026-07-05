@@ -17,12 +17,14 @@ func TestAcc_IPPortGroupResource(t *testing.T) {
 	ts := acctest.NewTestServer(t)
 	mux := ts.Mux
 
+	// The controller does NOT echo the top-level group description in the
+	// per-type list read, so it is intentionally omitted here — the resource must
+	// preserve the configured description rather than null it.
 	listRow := map[string]any{
-		"groupId":     "test-group-id",
-		"name":        "camera-service-ports",
-		"description": "Camera ONVIF/RTSP/HTTP ports",
-		"type":        int32(1),
-		"portType":    int32(0),
+		"groupId":  "test-group-id",
+		"name":     "camera-service-ports",
+		"type":     int32(1),
+		"portType": int32(0),
 		"ipList": []any{
 			map[string]any{"ip": "192.168.30.0", "mask": int32(24)},
 		},
@@ -103,6 +105,9 @@ func TestAcc_IPPortGroupResource(t *testing.T) {
 				ImportStateVerify:                    true,
 				ImportStateId:                        "test-site-id/test-group-id",
 				ImportStateVerifyIdentifierAttribute: "group_id",
+				// description is not returned by the controller's list read, so it
+				// cannot be recovered on a bare import.
+				ImportStateVerifyIgnore: []string{"description"},
 			},
 			{
 				Config: ts.ProviderConfig + `

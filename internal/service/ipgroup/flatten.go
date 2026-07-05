@@ -41,6 +41,16 @@ func flattenGroupRead(m *ipGroupResourceModel, r *groupReadRow) {
 	}
 	m.GroupId = types.StringPointerValue(r.GroupId)
 	m.Name = types.StringValue(r.Name)
-	m.Description = stringPtrOrNull(r.Description)
+	// The controller stores the top-level group description but does NOT echo it
+	// in the per-type group list read (confirmed live: name/ipList/portList come
+	// back, description does not). Overwriting it with null here would trip
+	// Terraform's "inconsistent result after apply" for this Optional attribute
+	// and would drift on every refresh. So only adopt a description the read
+	// actually returns; otherwise preserve the configured/prior value. (The
+	// nested ip_list description *is* returned, so it flattens normally.) The
+	// trade-off is that the description is not recoverable on bare import.
+	if desc := stringPtrOrNull(r.Description); !desc.IsNull() {
+		m.Description = desc
+	}
 	m.IpList = flattenIpList(r.IpList)
 }

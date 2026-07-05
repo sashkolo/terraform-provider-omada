@@ -21,11 +21,14 @@ func TestAcc_IPGroupResource(t *testing.T) {
 
 	// listRow is the single row returned by the IP-group list endpoint. It models
 	// a two-entry group: a /32 host and a /24 subnet.
+	// The controller does NOT echo the top-level group description in the
+	// per-type list read (only name/ipList/portList), so it is intentionally
+	// omitted here — the resource must preserve the configured description rather
+	// than null it. The nested ipList description *is* returned.
 	listRow := map[string]any{
-		"groupId":     "test-group-id",
-		"name":        "vigi-cameras",
-		"description": "VIGI camera hosts",
-		"type":        int32(0),
+		"groupId": "test-group-id",
+		"name":    "vigi-cameras",
+		"type":    int32(0),
 		"ipList": []any{
 			map[string]any{"ip": "192.168.30.51", "mask": int32(32), "description": "cam-porch"},
 			map[string]any{"ip": "192.168.30.0", "mask": int32(24)},
@@ -115,6 +118,9 @@ func TestAcc_IPGroupResource(t *testing.T) {
 				ImportStateVerify:                    true,
 				ImportStateId:                        "test-site-id/test-group-id",
 				ImportStateVerifyIdentifierAttribute: "group_id",
+				// description is not returned by the controller's list read, so it
+				// cannot be recovered on a bare import.
+				ImportStateVerifyIgnore: []string{"description"},
 			},
 			// Update the name in place.
 			{

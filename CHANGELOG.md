@@ -1,3 +1,14 @@
+## 0.9.1
+
+FIXES:
+- `omada_ip_group` / `omada_ip_port_group`: preserve the configured top-level
+  `description` on read. The controller stores it on create/modify but does not
+  echo it in the per-type group list read, so the resource was refreshing it to
+  null — tripping "Provider produced inconsistent result after apply" on create
+  and drifting on every refresh. The description is now adopted from the API only
+  when the read returns one, and is documented as not recoverable on bare import.
+  Found by the homelab live apply proof (homelab #155).
+
 ## 0.9.0
 
 FEATURES:

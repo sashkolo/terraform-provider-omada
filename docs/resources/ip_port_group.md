@@ -61,7 +61,7 @@ output "camera_service_ports_group_id" {
 
 ### Optional
 
-- `description` (String) Optional group description (1 to 256 characters). Do not store secrets here.
+- `description` (String) Optional group description (1 to 256 characters). Do not store secrets here. The controller stores this but does not return it in the group list read, so it is preserved from configuration rather than refreshed from the API, and is not recoverable on a bare import.
 - `port_list` (List of String) Ports the group matches when port_type is 0. Each entry is a single port ("554") or an inclusive range ("8000-8100").
 - `port_mask_list` (Attributes List) Port/mask pairs the group matches when port_type is 1. (see [below for nested schema](#nestedatt--port_mask_list))
 - `port_type` (Number) Port match mode: `0` port list (use port_list, the default), `1` port mask (use port_mask_list).
