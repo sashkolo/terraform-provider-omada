@@ -9,6 +9,7 @@ import (
 	"terraform-provider-omada/internal/client"
 	"terraform-provider-omada/internal/service/acl"
 	"terraform-provider-omada/internal/service/attackdefensesetting"
+	"terraform-provider-omada/internal/service/dhcpreservation"
 	"terraform-provider-omada/internal/service/firewallsetting"
 	"terraform-provider-omada/internal/service/gatewayaclorder"
 	"terraform-provider-omada/internal/service/ipgroup"
@@ -304,5 +305,6 @@ func (p *omadaProvider) Resources(_ context.Context) []func() resource.Resource 
 		attackdefensesetting.NewResource,
 		switchportprofile.NewResource,
 		switchport.NewResource,
+		dhcpreservation.NewResource,
 	}
 }
