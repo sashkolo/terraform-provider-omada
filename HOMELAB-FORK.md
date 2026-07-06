@@ -16,7 +16,9 @@ checksum-verified filesystem mirror.
   `omada_firewall_setting` + `omada_attack_defense_setting` (v0.7.3, homelab #56),
   `omada_switch_port_profile` + `omada_switch_port` (v0.8.0, homelab #153),
   `omada_ip_group` + `omada_ip_port_group` (v0.9.0, homelab #155),
-  `omada_gateway_acl_order` (v0.10.0, homelab #156).
+  `omada_gateway_acl_order` (v0.10.0, homelab #156),
+  `omada_dhcp_reservation` (v0.11.0, homelab #154),
+  `omada_ap_wlan_group` (v0.13.0, homelab #157).
 - **Decision + consumption model:** documented in the homelab repo at
   `docs/network/OMADA-TERRAFORM.md`.
 - **Upstreaming:** changes here that are not homelab-specific should be offered
