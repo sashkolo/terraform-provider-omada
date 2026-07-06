@@ -30,15 +30,15 @@ func TestAcc_ApWlanGroupResource(t *testing.T) {
 	const defaultGroup = "638ef75a73919c1e1734f77a"
 	const stagingGroup = "638ef75a73919c1e1734f88b"
 
-	// apRow is the mutable AP overview. Note the group is keyed under the
-	// camelCase "wlanGroupId" (not the SDK's spaced "wlan group id") — the
-	// provider's multi-key scan must still find it. The AP starts on the default
-	// group.
+	// apRow is the mutable AP overview. The group is keyed under "wlanId" — the
+	// key the live controller (6.2.10.18) uses on GET /aps/{apMac}, not the SDK
+	// model's spaced "wlan group id" — which the provider's multi-key scan must
+	// find. The AP starts on the default group.
 	apRow := map[string]any{
-		"mac":         "A4-2B-B0-11-22-33",
-		"name":        "AP Test",
-		"model":       "EAP653",
-		"wlanGroupId": defaultGroup,
+		"mac":    "A4-2B-B0-11-22-33",
+		"name":   "AP Test",
+		"model":  "EAP653",
+		"wlanId": defaultGroup,
 	}
 
 	// apGone flips the overview read to the controller's not-found error so the
@@ -76,11 +76,11 @@ func TestAcc_ApWlanGroupResource(t *testing.T) {
 			writeJSON(w, `{"errorCode":-1,"msg":"wlanGroupId is required"}`)
 			return
 		}
-		if body.WlanGroupId == apRow["wlanGroupId"] {
+		if body.WlanGroupId == apRow["wlanId"] {
 			writeJSON(w, `{"errorCode":-1,"msg":"cannot switch to the current wlan group"}`)
 			return
 		}
-		apRow["wlanGroupId"] = body.WlanGroupId
+		apRow["wlanId"] = body.WlanGroupId
 		writeJSON(w, emptyResponse)
 	})
 
