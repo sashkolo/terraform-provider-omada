@@ -3,12 +3,12 @@
 page_title: "omada_attack_defense_setting Resource - omada"
 subcategory: "Attack"
 description: |-
-  Manages the site-global Omada attack-defense settings (coarse blob): DoS, flood, scan, and ping protections. This is a singleton per site: the object always exists, so import it (<site_id>) to adopt the live settings before managing. Create/Update overwrite the whole object via Modify; Delete is a no-op (the singleton is never removed, and Reset is never called). Targets the Open API v1 attack-defense surface (controller firmware such as 5.15.x).
+  Manages the site-global Omada attack-defense settings (coarse blob): DoS, flood, scan, and ping protections. This is a singleton per site: the object always exists, so import it (<site_id>) to adopt the live settings before managing. Create/Update overwrite the whole object via Modify; Delete is a no-op (the singleton is never removed, and Reset is never called). Targets the Open API v1 attack-defense surface. The modify body is built with the controller's keys (notably specifiedOption.securityEnable, which the generated SDK model misnames), so writes round-trip on firmware where GET and PATCH share the same schema (verified on 6.2.10.18).
 ---
 
 # omada_attack_defense_setting (Resource)
 
-Manages the site-global Omada attack-defense settings (coarse blob): DoS, flood, scan, and ping protections. This is a singleton per site: the object always exists, so import it (`<site_id>`) to adopt the live settings before managing. Create/Update overwrite the whole object via Modify; Delete is a no-op (the singleton is never removed, and Reset is never called). Targets the Open API v1 attack-defense surface (controller firmware such as 5.15.x).
+Manages the site-global Omada attack-defense settings (coarse blob): DoS, flood, scan, and ping protections. This is a singleton per site: the object always exists, so import it (`<site_id>`) to adopt the live settings before managing. Create/Update overwrite the whole object via Modify; Delete is a no-op (the singleton is never removed, and Reset is never called). Targets the Open API v1 attack-defense surface. The modify body is built with the controller's keys (notably specifiedOption.securityEnable, which the generated SDK model misnames), so writes round-trip on firmware where GET and PATCH share the same schema (verified on 6.2.10.18).
 
 ## Example Usage
 

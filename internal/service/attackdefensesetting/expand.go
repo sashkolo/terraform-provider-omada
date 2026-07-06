@@ -1,56 +1,8 @@
 package attackdefensesetting
 
 import (
-	"github.com/Tohaker/omada-go-sdk/omada"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
-
-// expandSpecifiedOption converts the optional Terraform block into the SDK
-// entity. Returns nil when the block is absent.
-func expandSpecifiedOption(s *specifiedOptionModel) *omada.SpecifiedOptionOpenApiVO {
-	if s == nil {
-		return nil
-	}
-	return &omada.SpecifiedOptionOpenApiVO{
-		NoOperationEnable:    s.NoOperationEnable.ValueBoolPointer(),
-		RecordRouteEnable:    s.RecordRouteEnable.ValueBoolPointer(),
-		SecurityOptionEnable: s.SecurityOptionEnable.ValueBoolPointer(),
-		StreamEnable:         s.StreamEnable.ValueBoolPointer(),
-		TimestampEnable:      s.TimestampEnable.ValueBoolPointer(),
-	}
-}
-
-// expandAttackDefenseSetting builds the SDK attack-defense settings value sent
-// on Create and Modify. Optional (pointer) fields are sent only when set. The
-// whole object is sent on every write (it is a coarse blob).
-func expandAttackDefenseSetting(plan attackDefenseSettingResourceModel) omada.AttackDefenseSetting {
-	return omada.AttackDefenseSetting{
-		IcmpConnEnable:             plan.IcmpConnEnable.ValueBool(),
-		IcmpConnLimit:              plan.IcmpConnLimit.ValueInt32Pointer(),
-		IcmpSrcEnable:              plan.IcmpSrcEnable.ValueBool(),
-		IcmpSrcLimit:               plan.IcmpSrcLimit.ValueInt32Pointer(),
-		IcmpTimestampRequestReject: plan.IcmpTimestampRequestReject.ValueBoolPointer(),
-		LargePingEnable:            plan.LargePingEnable.ValueBool(),
-		LargePingThreshold:         plan.LargePingThreshold.ValueInt32Pointer(),
-		PingDeathEnable:            plan.PingDeathEnable.ValueBool(),
-		PingWanEnable:              plan.PingWanEnable.ValueBool(),
-		SpecifiedOptionEnable:      plan.SpecifiedOptionEnable.ValueBool(),
-		SpecifiedOption:            expandSpecifiedOption(plan.SpecifiedOption),
-		TcpConnEnable:              plan.TcpConnEnable.ValueBool(),
-		TcpConnLimit:               plan.TcpConnLimit.ValueInt32Pointer(),
-		TcpFinNoAckEnable:          plan.TcpFinNoAckEnable.ValueBool(),
-		TcpScanEnable:              plan.TcpScanEnable.ValueBool(),
-		TcpScanReject:              plan.TcpScanReject.ValueBoolPointer(),
-		TcpSrcEnable:               plan.TcpSrcEnable.ValueBool(),
-		TcpSrcLimit:                plan.TcpSrcLimit.ValueInt32Pointer(),
-		TcpSynFinEnable:            plan.TcpSynFinEnable.ValueBool(),
-		UdpConnEnable:              plan.UdpConnEnable.ValueBool(),
-		UdpConnLimit:               plan.UdpConnLimit.ValueInt32Pointer(),
-		UdpSrcEnable:               plan.UdpSrcEnable.ValueBool(),
-		UdpSrcLimit:                plan.UdpSrcLimit.ValueInt32Pointer(),
-		WinNukeAttackEnable:        plan.WinNukeAttackEnable.ValueBool(),
-	}
-}
 
 // flattenSpecifiedOption converts the lenient read view into the Terraform block.
 // Returns nil when the controller reports no sub-object.

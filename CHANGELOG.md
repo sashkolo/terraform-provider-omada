@@ -1,3 +1,25 @@
+## 0.12.0
+
+FIXES:
+- `omada_attack_defense_setting`: enable managed writes. The write path is now
+  built by hand (a local modify body) and PATCHed through the SDK's configured
+  transport, instead of the generated SDK model, so the nested IP-security-option
+  toggle is sent under the controller's key `specifiedOption.securityEnable`. The
+  SDK model hardcodes the codegen name `securityOptionEnable`, which the
+  controller silently ignores — leaving `security_option_enable` in perpetual
+  drift (planned, never applied, read back unchanged). The read side already
+  compensated for the same key drift (v0.7.4); the write side now matches. On
+  controller 5.15.x the write path was additionally blocked because GET omitted
+  13 PATCH-required fields; on 6.2.10.18 GET and PATCH share the same schema, so
+  a full-object write round-trips (homelab #82).
+
+## 0.11.0
+
+FEATURES:
+- Added `omada_dhcp_reservation` resource: a MAC-keyed DHCP fixed-address
+  reservation on a LAN network, with MAC normalization so out-of-band and
+  imported entries compare cleanly. Full CRUD + import (homelab #154).
+
 ## 0.10.0
 
 FEATURES:
