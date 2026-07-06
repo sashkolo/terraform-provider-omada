@@ -59,26 +59,21 @@ var objectIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{24}$`)
 // accepting the first id-shaped value; if none is present, WlanGroupId is empty
 // and the caller treats the group as unreadable from this endpoint.
 func decodeApOverview(raw json.RawMessage) (apOverviewRead, error) {
-	var m map[string]json.RawMessage
+	var m map[string]any
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return apOverviewRead{}, err
 	}
 
 	var ov apOverviewRead
-	if v, ok := m["mac"]; ok {
-		_ = json.Unmarshal(v, &ov.Mac)
+	if v, ok := m["mac"].(string); ok {
+		ov.Mac = v
 	}
-	if v, ok := m["name"]; ok {
-		_ = json.Unmarshal(v, &ov.Name)
+	if v, ok := m["name"].(string); ok {
+		ov.Name = v
 	}
 	for _, k := range wlanGroupIDKeys {
-		v, ok := m[k]
-		if !ok {
-			continue
-		}
-		var s string
-		if json.Unmarshal(v, &s) == nil && objectIDPattern.MatchString(s) {
-			ov.WlanGroupId = s
+		if v, ok := m[k].(string); ok && objectIDPattern.MatchString(v) {
+			ov.WlanGroupId = v
 			break
 		}
 	}

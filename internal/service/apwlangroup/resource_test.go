@@ -2,6 +2,7 @@ package apwlangroup_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"terraform-provider-omada/internal/acctest"
 	"testing"
@@ -100,17 +101,17 @@ func TestAcc_ApWlanGroupResource(t *testing.T) {
 			// must skip the switch PATCH (which the controller would reject) and
 			// still succeed, proving the no-op guard and idempotent adoption.
 			{
-				Config: ts.ProviderConfig + `
+				Config: ts.ProviderConfig + fmt.Sprintf(`
 				resource "omada_ap_wlan_group" "test" {
 					site_id       = "test-site-id"
 					ap_mac        = "A4-2B-B0-11-22-33"
-					wlan_group_id = "638ef75a73919c1e1734f77a"
+					wlan_group_id = %q
 				}
-				`,
+				`, defaultGroup),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("omada_ap_wlan_group.test", "site_id", "test-site-id"),
 					resource.TestCheckResourceAttr("omada_ap_wlan_group.test", "ap_mac", "A4-2B-B0-11-22-33"),
-					resource.TestCheckResourceAttr("omada_ap_wlan_group.test", "wlan_group_id", "638ef75a73919c1e1734f77a"),
+					resource.TestCheckResourceAttr("omada_ap_wlan_group.test", "wlan_group_id", defaultGroup),
 					resource.TestCheckResourceAttr("omada_ap_wlan_group.test", "ap_name", "AP Test"),
 				),
 			},
@@ -124,15 +125,15 @@ func TestAcc_ApWlanGroupResource(t *testing.T) {
 			},
 			// Update: switch the AP to a different group.
 			{
-				Config: ts.ProviderConfig + `
+				Config: ts.ProviderConfig + fmt.Sprintf(`
 				resource "omada_ap_wlan_group" "test" {
 					site_id       = "test-site-id"
 					ap_mac        = "A4-2B-B0-11-22-33"
-					wlan_group_id = "638ef75a73919c1e1734f88b"
+					wlan_group_id = %q
 				}
-				`,
+				`, stagingGroup),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("omada_ap_wlan_group.test", "wlan_group_id", "638ef75a73919c1e1734f88b"),
+					resource.TestCheckResourceAttr("omada_ap_wlan_group.test", "wlan_group_id", stagingGroup),
 				),
 			},
 			// Drift: the AP is forgotten upstream (overview read returns -1001).
