@@ -66,7 +66,9 @@ func (r *attackDefenseSettingResource) Schema(_ context.Context, _ resource.Sche
 			"exists, so import it (`<site_id>`) to adopt the live settings before managing. " +
 			"Create/Update overwrite the whole object via Modify; Delete is a no-op (the singleton " +
 			"is never removed, and Reset is never called). Targets the Open API v1 attack-defense " +
-			"surface (controller firmware such as 5.15.x).",
+			"surface. The modify body is built with the controller's keys (notably " +
+			"specifiedOption.securityEnable, which the generated SDK model misnames), so writes " +
+			"round-trip on firmware where GET and PATCH share the same schema (verified on 6.2.10.18).",
 		Attributes: map[string]schema.Attribute{
 			"site_id": schema.StringAttribute{
 				Description: "Site ID the settings belong to. The settings are a singleton per site; " +
@@ -185,14 +187,7 @@ func (r *attackDefenseSettingResource) Create(ctx context.Context, req resource.
 		return
 	}
 
-	_, httpResp, callErr := r.client.AttackDefenseAPI.ModifyAttackDefenseSetting(ctx, r.omadacId, plan.SiteId.ValueString()).
-		AttackDefenseSetting(expandAttackDefenseSetting(plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "creating attack-defense setting")
-	if !ok {
-		return
-	}
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "creating attack-defense setting", env.ErrorCode, env.Msg)
+	if !modifyAttackDefenseSetting(ctx, r, &resp.Diagnostics, "creating attack-defense setting", plan) {
 		return
 	}
 
@@ -238,14 +233,7 @@ func (r *attackDefenseSettingResource) Update(ctx context.Context, req resource.
 	}
 	plan.SiteId = state.SiteId
 
-	_, httpResp, callErr := r.client.AttackDefenseAPI.ModifyAttackDefenseSetting(ctx, r.omadacId, plan.SiteId.ValueString()).
-		AttackDefenseSetting(expandAttackDefenseSetting(plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "updating attack-defense setting")
-	if !ok {
-		return
-	}
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "updating attack-defense setting", env.ErrorCode, env.Msg)
+	if !modifyAttackDefenseSetting(ctx, r, &resp.Diagnostics, "updating attack-defense setting", plan) {
 		return
 	}
 

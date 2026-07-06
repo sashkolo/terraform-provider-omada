@@ -2,7 +2,10 @@ package attackdefensesetting_test
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
+	"strings"
+	"sync"
 	"terraform-provider-omada/internal/acctest"
 	"testing"
 
@@ -11,11 +14,17 @@ import (
 
 // TestAcc_AttackDefenseSettingResource exercises the singleton-blob lifecycle
 // plus import against an httptest stand-in. The settings object is mutated in
-// place by the modify handler so the next read reflects the change.
+// place by the modify handler so the next read reflects the change. The PATCH
+// handler also asserts the modify body carries the controller's
+// specifiedOption.securityEnable key (not the SDK's securityOptionEnable), which
+// is the fix that unblocks managed writes on firmware with GET/PATCH symmetry.
 func TestAcc_AttackDefenseSettingResource(t *testing.T) {
 	ts := acctest.NewTestServer(t)
 	mux := ts.Mux
 
+	// settings is read by the GET handler and mutated by the PATCH handler, which
+	// run on separate httptest goroutines; guard every access.
+	var mu sync.Mutex
 	settings := map[string]any{
 		"icmpConnEnable":        true,
 		"icmpConnLimit":         int32(300),
@@ -25,23 +34,34 @@ func TestAcc_AttackDefenseSettingResource(t *testing.T) {
 		"largePingThreshold":    int32(1024),
 		"pingDeathEnable":       true,
 		"pingWanEnable":         false,
-		"specifiedOptionEnable": false,
-		"tcpConnEnable":         true,
-		"tcpConnLimit":          int32(300),
-		"tcpFinNoAckEnable":     true,
-		"tcpScanEnable":         true,
-		"tcpScanReject":         true,
-		"tcpSrcEnable":          true,
-		"tcpSrcLimit":           int32(300),
-		"tcpSynFinEnable":       true,
-		"udpConnEnable":         true,
-		"udpConnLimit":          int32(300),
-		"udpSrcEnable":          true,
-		"udpSrcLimit":           int32(300),
-		"winNukeAttackEnable":   true,
+		"specifiedOptionEnable": true,
+		"specifiedOption": map[string]any{
+			"noOperationEnable": true,
+			"recordRouteEnable": true,
+			// Controller key for the IP-security option (SDK misnames it
+			// securityOptionEnable); the provider must read and write this key.
+			"securityEnable":  true,
+			"streamEnable":    true,
+			"timestampEnable": true,
+		},
+		"tcpConnEnable":       true,
+		"tcpConnLimit":        int32(300),
+		"tcpFinNoAckEnable":   true,
+		"tcpScanEnable":       true,
+		"tcpScanReject":       true,
+		"tcpSrcEnable":        true,
+		"tcpSrcLimit":         int32(300),
+		"tcpSynFinEnable":     true,
+		"udpConnEnable":       true,
+		"udpConnLimit":        int32(300),
+		"udpSrcEnable":        true,
+		"udpSrcLimit":         int32(300),
+		"winNukeAttackEnable": true,
 	}
 
 	settingsResponse := func() string {
+		mu.Lock()
+		defer mu.Unlock()
 		b, _ := json.Marshal(map[string]any{
 			"errorCode": 0,
 			"msg":       "Success.",
@@ -62,56 +82,88 @@ func TestAcc_AttackDefenseSettingResource(t *testing.T) {
 		writeJSON(w, settingsResponse())
 	})
 
-	// Create/Update (PATCH /attack-defense): reflect the pingWanEnable change.
+	// Create/Update (PATCH /attack-defense): assert the body uses the controller's
+	// nested key, then merge it so the next read reflects the change.
 	mux.HandleFunc("PATCH /openapi/v1/{omadacId}/sites/{siteId}/attack-defense", func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			PingWanEnable bool `json:"pingWanEnable"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		settings["pingWanEnable"] = req.PingWanEnable
+		body := string(raw)
+		if !strings.Contains(body, `"securityEnable"`) {
+			t.Errorf("modify body missing controller key securityEnable: %s", body)
+		}
+		if strings.Contains(body, `"securityOptionEnable"`) {
+			t.Errorf("modify body sent SDK key securityOptionEnable (should be securityEnable): %s", body)
+		}
+
+		var patch map[string]any
+		if err := json.Unmarshal(raw, &patch); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		for k, v := range patch {
+			settings[k] = v
+		}
+		mu.Unlock()
 		writeJSON(w, emptyResponse)
 	})
+
+	config := func(pingWan bool) string {
+		ping := "false"
+		if pingWan {
+			ping = "true"
+		}
+		return ts.ProviderConfig + `
+		resource "omada_attack_defense_setting" "test" {
+			site_id                 = "test-site-id"
+			icmp_conn_enable        = true
+			icmp_conn_limit         = 300
+			icmp_src_enable         = true
+			icmp_src_limit          = 300
+			large_ping_enable       = true
+			large_ping_threshold    = 1024
+			ping_death_enable       = true
+			ping_wan_enable         = ` + ping + `
+			specified_option_enable = true
+			specified_option = {
+				no_operation_enable    = true
+				record_route_enable    = true
+				security_option_enable = true
+				stream_enable          = true
+				timestamp_enable       = true
+			}
+			tcp_conn_enable        = true
+			tcp_conn_limit         = 300
+			tcp_fin_no_ack_enable  = true
+			tcp_scan_enable        = true
+			tcp_scan_reject        = true
+			tcp_src_enable         = true
+			tcp_src_limit          = 300
+			tcp_syn_fin_enable     = true
+			udp_conn_enable        = true
+			udp_conn_limit         = 300
+			udp_src_enable         = true
+			udp_src_limit          = 300
+			win_nuke_attack_enable = true
+		}
+		`
+	}
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			// Create + Read.
 			{
-				Config: ts.ProviderConfig + `
-				resource "omada_attack_defense_setting" "test" {
-					site_id                = "test-site-id"
-					icmp_conn_enable       = true
-					icmp_conn_limit        = 300
-					icmp_src_enable        = true
-					icmp_src_limit         = 300
-					large_ping_enable      = true
-					large_ping_threshold   = 1024
-					ping_death_enable      = true
-					ping_wan_enable        = false
-					specified_option_enable = false
-					tcp_conn_enable        = true
-					tcp_conn_limit         = 300
-					tcp_fin_no_ack_enable  = true
-					tcp_scan_enable        = true
-					tcp_scan_reject        = true
-					tcp_src_enable         = true
-					tcp_src_limit          = 300
-					tcp_syn_fin_enable     = true
-					udp_conn_enable        = true
-					udp_conn_limit         = 300
-					udp_src_enable         = true
-					udp_src_limit          = 300
-					win_nuke_attack_enable = true
-				}
-				`,
+				Config: config(false),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("omada_attack_defense_setting.test", "site_id", "test-site-id"),
 					resource.TestCheckResourceAttr("omada_attack_defense_setting.test", "ping_wan_enable", "false"),
 					resource.TestCheckResourceAttr("omada_attack_defense_setting.test", "tcp_scan_reject", "true"),
 					resource.TestCheckResourceAttr("omada_attack_defense_setting.test", "icmp_conn_limit", "300"),
+					resource.TestCheckResourceAttr("omada_attack_defense_setting.test", "specified_option.security_option_enable", "true"),
 				),
 			},
 			// Import (ID format: <site_id>).
@@ -124,33 +176,7 @@ func TestAcc_AttackDefenseSettingResource(t *testing.T) {
 			},
 			// Update (ping_wan_enable) + Read.
 			{
-				Config: ts.ProviderConfig + `
-				resource "omada_attack_defense_setting" "test" {
-					site_id                = "test-site-id"
-					icmp_conn_enable       = true
-					icmp_conn_limit        = 300
-					icmp_src_enable        = true
-					icmp_src_limit         = 300
-					large_ping_enable      = true
-					large_ping_threshold   = 1024
-					ping_death_enable      = true
-					ping_wan_enable        = true
-					specified_option_enable = false
-					tcp_conn_enable        = true
-					tcp_conn_limit         = 300
-					tcp_fin_no_ack_enable  = true
-					tcp_scan_enable        = true
-					tcp_scan_reject        = true
-					tcp_src_enable         = true
-					tcp_src_limit          = 300
-					tcp_syn_fin_enable     = true
-					udp_conn_enable        = true
-					udp_conn_limit         = 300
-					udp_src_enable         = true
-					udp_src_limit          = 300
-					win_nuke_attack_enable = true
-				}
-				`,
+				Config: config(true),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("omada_attack_defense_setting.test", "ping_wan_enable", "true"),
 				),
