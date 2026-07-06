@@ -1,3 +1,20 @@
+## 0.13.0
+
+FEATURES:
+- Added `omada_ap_wlan_group` resource: manages which single WLAN group a managed
+  access point (EAP) broadcasts. The Open API models the AP↔WLAN-group
+  relationship as 1:1 (every AP belongs to exactly one group) and exposes only a
+  "switch this AP to a different group" write (`PATCH /aps/{apMac}/wlan-group`),
+  never an unbind. The resource is therefore a singleton keyed by
+  `(site_id, ap_mac)`: Create/Update switch the AP to the target group — skipping
+  the call when the AP is already on it, which the controller rejects ("cannot be
+  the current wlan group") — Read fetches the current group from the AP overview
+  (`GET /aps/{apMac}`, decoding the literal `"wlan group id"` key), and Delete is
+  a no-op (an AP cannot be unbound; moving it "back" is a `wlan_group_id` change).
+  Import id is `<site_id>/<ap_mac>`. This lets Git assert and drift-detect AP↔group
+  bindings while keeping staged WLAN groups unbroadcast until an AP is explicitly
+  pointed at them (homelab #157).
+
 ## 0.12.0
 
 FIXES:
