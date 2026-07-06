@@ -15,7 +15,17 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
+
+// errNotFound is the Open API's generic "invalid request parameters" errorCode,
+// which the controller returns when a path-addressed object does not exist — the
+// same code the SSID detail read uses to detect a deleted SSID. For the AP
+// overview read it signals a forgotten/removed AP so the resource is dropped
+// from state rather than failing every plan. (If a future firmware reports a
+// different code for a missing AP, the fallback is the prior hard-error
+// behavior, so this is safe to assume until the live proof confirms it.)
+const errNotFound int32 = -1001
 
 // Ensure the implementation satisfies the expected interfaces.
 var (
@@ -142,27 +152,38 @@ func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnost
 // wlan group"). This keeps Create idempotent for an AP already bound to the
 // desired group (e.g. adopting the production baseline) and tolerates
 // out-of-band drift that already matches the plan.
-func (r *apWlanGroupResource) switchGroup(ctx context.Context, diags *diag.Diagnostics, plan apWlanGroupResourceModel, action string) bool {
-	current := plan
+//
+// It returns (ok, didSwitch). When the AP is already on the desired group it
+// copies the just-read live state into *plan and returns (true, false) so the
+// caller can skip a redundant overview read.
+func (r *apWlanGroupResource) switchGroup(ctx context.Context, diags *diag.Diagnostics, plan *apWlanGroupResourceModel, action string) (ok bool, didSwitch bool) {
+	current := *plan
 	if !readOverview(ctx, diags, r, &current) {
-		return false
+		return false, false
+	}
+	if current.WlanGroupId.IsNull() {
+		// The AP is gone upstream; a nonexistent AP cannot be switched.
+		diags.AddError("Error "+action, fmt.Sprintf("AP %s was not found on the controller.", plan.ApMac.ValueString()))
+		return false, false
 	}
 	if current.WlanGroupId.ValueString() == plan.WlanGroupId.ValueString() {
 		// Already on the desired group; the switch endpoint would reject a no-op.
-		return true
+		// Adopt the fresh live read so the caller needs no second overview read.
+		*plan = current
+		return true, false
 	}
 
 	_, httpResp, callErr := r.client.ApAPI.ModifyApWlanGroup(ctx, r.omadacId, plan.SiteId.ValueString(), plan.ApMac.ValueString()).
-		ApUpdateWlanGroupOpenApiVO(expandSwitch(plan)).Execute()
+		ApUpdateWlanGroupOpenApiVO(expandSwitch(*plan)).Execute()
 	env, ok := decodeEnvelope(httpResp, callErr, diags, action)
 	if !ok {
-		return false
+		return false, false
 	}
 	if env.hasError() {
 		respondAPIError(diags, action, env.ErrorCode, env.Msg)
-		return false
+		return false, false
 	}
-	return true
+	return true, true
 }
 
 // Create switches the (always-existing) AP to the desired WLAN group and sets
@@ -175,19 +196,33 @@ func (r *apWlanGroupResource) Create(ctx context.Context, req resource.CreateReq
 		return
 	}
 
-	if !r.switchGroup(ctx, &resp.Diagnostics, plan, "creating AP wlan group binding") {
+	ok, didSwitch := r.switchGroup(ctx, &resp.Diagnostics, &plan, "creating AP wlan group binding")
+	if !ok {
 		return
 	}
 
-	if !readOverview(ctx, &resp.Diagnostics, r, &plan) {
-		return
+	// switchGroup already adopted the live read when no switch was needed; only
+	// re-read after an actual switch.
+	if didSwitch {
+		if !readOverview(ctx, &resp.Diagnostics, r, &plan) {
+			return
+		}
+		if plan.WlanGroupId.IsNull() {
+			resp.Diagnostics.AddError(
+				"Error creating AP wlan group binding",
+				fmt.Sprintf("AP %s was not present after the switch.", plan.ApMac.ValueString()),
+			)
+			return
+		}
 	}
 
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
 }
 
-// Read refreshes the Terraform state from the AP overview.
+// Read refreshes the Terraform state from the AP overview. When the AP is gone
+// upstream (forgotten/removed), readOverview clears wlan_group_id and the
+// resource is dropped from state so Terraform plans its removal.
 func (r *apWlanGroupResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state apWlanGroupResourceModel
 	diags := req.State.Get(ctx, &state)
@@ -197,6 +232,10 @@ func (r *apWlanGroupResource) Read(ctx context.Context, req resource.ReadRequest
 	}
 
 	if !readOverview(ctx, &resp.Diagnostics, r, &state) {
+		return
+	}
+	if state.WlanGroupId.IsNull() {
+		resp.State.RemoveResource(ctx)
 		return
 	}
 
@@ -224,12 +263,22 @@ func (r *apWlanGroupResource) Update(ctx context.Context, req resource.UpdateReq
 	plan.SiteId = state.SiteId
 	plan.ApMac = state.ApMac
 
-	if !r.switchGroup(ctx, &resp.Diagnostics, plan, "updating AP wlan group binding") {
+	ok, didSwitch := r.switchGroup(ctx, &resp.Diagnostics, &plan, "updating AP wlan group binding")
+	if !ok {
 		return
 	}
 
-	if !readOverview(ctx, &resp.Diagnostics, r, &plan) {
-		return
+	if didSwitch {
+		if !readOverview(ctx, &resp.Diagnostics, r, &plan) {
+			return
+		}
+		if plan.WlanGroupId.IsNull() {
+			resp.Diagnostics.AddError(
+				"Error updating AP wlan group binding",
+				fmt.Sprintf("AP %s was not present after the switch.", plan.ApMac.ValueString()),
+			)
+			return
+		}
 	}
 
 	diags = resp.State.Set(ctx, plan)
@@ -267,6 +316,14 @@ func readOverview(ctx context.Context, diags *diag.Diagnostics, r *apWlanGroupRe
 	env, ok := decodeEnvelope(httpResp, callErr, diags, "reading AP wlan group binding")
 	if !ok {
 		return false
+	}
+	// errNotFound (-1001): the AP is gone upstream. Signal it to the caller via a
+	// null wlan_group_id sentinel (the attribute is Required, so null never occurs
+	// legitimately) so Read can drop the resource from state.
+	if env.hasError() && env.ErrorCode != nil && *env.ErrorCode == errNotFound {
+		model.WlanGroupId = types.StringNull()
+		model.ApName = types.StringNull()
+		return true
 	}
 	if env.hasError() {
 		diags.AddError(

@@ -33,6 +33,10 @@ func TestAcc_ApWlanGroupResource(t *testing.T) {
 		"wlan group id": "default-group",
 	}
 
+	// apGone flips the overview read to the controller's not-found error so the
+	// resource's drop-from-state path can be exercised.
+	var apGone bool
+
 	overviewResponse := func() string {
 		b, _ := json.Marshal(map[string]any{
 			"errorCode": 0,
@@ -72,8 +76,13 @@ func TestAcc_ApWlanGroupResource(t *testing.T) {
 		writeJSON(w, emptyResponse)
 	})
 
-	// Read (GET .../aps/{apMac}): AP overview.
+	// Read (GET .../aps/{apMac}): AP overview, or the controller's not-found
+	// error (-1001) once the AP has been "forgotten".
 	mux.HandleFunc("GET /openapi/v1/{omadacId}/sites/{siteId}/aps/{apMac}", func(w http.ResponseWriter, _ *http.Request) {
+		if apGone {
+			writeJSON(w, `{"errorCode":-1001,"msg":"invalid request parameters"}`)
+			return
+		}
 		writeJSON(w, overviewResponse())
 	})
 
@@ -118,6 +127,14 @@ func TestAcc_ApWlanGroupResource(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("omada_ap_wlan_group.test", "wlan_group_id", "staging-group"),
 				),
+			},
+			// Drift: the AP is forgotten upstream (overview read returns -1001).
+			// Read must drop the resource from state, so a refresh-only plan is
+			// non-empty (Terraform wants to recreate the binding).
+			{
+				PreConfig:          func() { apGone = true },
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
 			},
 		},
 	})
