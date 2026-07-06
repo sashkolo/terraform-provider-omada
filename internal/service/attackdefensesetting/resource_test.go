@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"terraform-provider-omada/internal/acctest"
 	"testing"
 
@@ -21,6 +22,9 @@ func TestAcc_AttackDefenseSettingResource(t *testing.T) {
 	ts := acctest.NewTestServer(t)
 	mux := ts.Mux
 
+	// settings is read by the GET handler and mutated by the PATCH handler, which
+	// run on separate httptest goroutines; guard every access.
+	var mu sync.Mutex
 	settings := map[string]any{
 		"icmpConnEnable":        true,
 		"icmpConnLimit":         int32(300),
@@ -56,6 +60,8 @@ func TestAcc_AttackDefenseSettingResource(t *testing.T) {
 	}
 
 	settingsResponse := func() string {
+		mu.Lock()
+		defer mu.Unlock()
 		b, _ := json.Marshal(map[string]any{
 			"errorCode": 0,
 			"msg":       "Success.",
@@ -97,9 +103,11 @@ func TestAcc_AttackDefenseSettingResource(t *testing.T) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		mu.Lock()
 		for k, v := range patch {
 			settings[k] = v
 		}
+		mu.Unlock()
 		writeJSON(w, emptyResponse)
 	})
 

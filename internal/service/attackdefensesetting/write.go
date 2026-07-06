@@ -124,8 +124,12 @@ func modifyAttackDefenseSetting(ctx context.Context, r *attackDefenseSettingReso
 		return false
 	}
 
+	if r.client == nil {
+		diags.AddError("Error "+action, "Provider client is not configured.")
+		return false
+	}
 	cfg := r.client.GetConfig()
-	if len(cfg.Servers) == 0 || cfg.Servers[0].URL == "" {
+	if cfg == nil || len(cfg.Servers) == 0 || cfg.Servers[0].URL == "" {
 		diags.AddError("Error "+action, "Provider client has no server URL configured.")
 		return false
 	}
@@ -136,19 +140,30 @@ func modifyAttackDefenseSetting(ctx context.Context, r *attackDefenseSettingReso
 		diags.AddError("Error "+action, "Could not build request: "+err.Error())
 		return false
 	}
+	// Carry every default header the SDK/provider configured (auth token, and
+	// any others), then set the request-specific content type. Explicit sets
+	// win over the copied defaults.
+	for k, v := range cfg.DefaultHeader {
+		req.Header.Set(k, v)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	if auth := cfg.DefaultHeader["Authorization"]; auth != "" {
-		req.Header.Set("Authorization", auth)
-	}
 
 	httpClient := cfg.HTTPClient
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
 
+	// http.Client.Do only errors on transport/redirect-policy failures (not on
+	// non-2xx), and on a redirect-policy failure the returned body is already
+	// closed. Handle the error up front rather than letting decodeEnvelope read a
+	// closed body; a controller-side rejection arrives as a 200 envelope instead.
 	httpResp, callErr := httpClient.Do(req)
-	env, ok := decodeEnvelope(httpResp, callErr, diags, action)
+	if callErr != nil {
+		diags.AddError("Error "+action, "Transport error: "+callErr.Error())
+		return false
+	}
+	env, ok := decodeEnvelope(httpResp, nil, diags, action)
 	if !ok {
 		return false
 	}
