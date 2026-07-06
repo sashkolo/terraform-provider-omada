@@ -1,3 +1,14 @@
+## 0.13.1
+
+FIXES:
+- `omada_ap_wlan_group`: read the current WLAN group id robustly. The SDK model
+  `ApOverviewInfo` declares the group under the spaced key `"wlan group id"`, but
+  live firmware (6.2.10.18) keys it differently, so `GET /aps/{apMac}` was read
+  back with an empty `wlan_group_id` and an imported binding never planned to a
+  no-op. The overview decode now scans candidate key spellings
+  (`wlanGroupId`, `wlan group id`, …) and accepts only an id-shaped value (24-hex),
+  so a group *name* is never mistaken for its id (homelab #157).
+
 ## 0.13.0
 
 FEATURES:

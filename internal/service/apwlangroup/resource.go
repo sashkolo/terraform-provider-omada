@@ -333,8 +333,8 @@ func readOverview(ctx context.Context, diags *diag.Diagnostics, r *apWlanGroupRe
 		return false
 	}
 
-	var ov apOverviewRead
-	if err := json.Unmarshal(env.Result, &ov); err != nil {
+	ov, err := decodeApOverview(env.Result)
+	if err != nil {
 		diags.AddError("Error reading AP wlan group binding", "Could not decode AP overview: "+err.Error())
 		return false
 	}

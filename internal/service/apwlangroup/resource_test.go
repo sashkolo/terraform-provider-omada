@@ -24,13 +24,20 @@ func TestAcc_ApWlanGroupResource(t *testing.T) {
 	ts := acctest.NewTestServer(t)
 	mux := ts.Mux
 
-	// apRow is the mutable AP overview. The AP starts on "default-group"; note
-	// the literal "wlan group id" key (with spaces) the controller returns.
+	// 24-hex Omada object ids for the WLAN groups. The provider accepts only
+	// id-shaped values, so a group name would (correctly) not be read back.
+	const defaultGroup = "638ef75a73919c1e1734f77a"
+	const stagingGroup = "638ef75a73919c1e1734f88b"
+
+	// apRow is the mutable AP overview. Note the group is keyed under the
+	// camelCase "wlanGroupId" (not the SDK's spaced "wlan group id") — the
+	// provider's multi-key scan must still find it. The AP starts on the default
+	// group.
 	apRow := map[string]any{
-		"mac":           "A4-2B-B0-11-22-33",
-		"name":          "AP Test",
-		"model":         "EAP653",
-		"wlan group id": "default-group",
+		"mac":         "A4-2B-B0-11-22-33",
+		"name":        "AP Test",
+		"model":       "EAP653",
+		"wlanGroupId": defaultGroup,
 	}
 
 	// apGone flips the overview read to the controller's not-found error so the
@@ -68,11 +75,11 @@ func TestAcc_ApWlanGroupResource(t *testing.T) {
 			writeJSON(w, `{"errorCode":-1,"msg":"wlanGroupId is required"}`)
 			return
 		}
-		if body.WlanGroupId == apRow["wlan group id"] {
+		if body.WlanGroupId == apRow["wlanGroupId"] {
 			writeJSON(w, `{"errorCode":-1,"msg":"cannot switch to the current wlan group"}`)
 			return
 		}
-		apRow["wlan group id"] = body.WlanGroupId
+		apRow["wlanGroupId"] = body.WlanGroupId
 		writeJSON(w, emptyResponse)
 	})
 
@@ -97,13 +104,13 @@ func TestAcc_ApWlanGroupResource(t *testing.T) {
 				resource "omada_ap_wlan_group" "test" {
 					site_id       = "test-site-id"
 					ap_mac        = "A4-2B-B0-11-22-33"
-					wlan_group_id = "default-group"
+					wlan_group_id = "638ef75a73919c1e1734f77a"
 				}
 				`,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("omada_ap_wlan_group.test", "site_id", "test-site-id"),
 					resource.TestCheckResourceAttr("omada_ap_wlan_group.test", "ap_mac", "A4-2B-B0-11-22-33"),
-					resource.TestCheckResourceAttr("omada_ap_wlan_group.test", "wlan_group_id", "default-group"),
+					resource.TestCheckResourceAttr("omada_ap_wlan_group.test", "wlan_group_id", "638ef75a73919c1e1734f77a"),
 					resource.TestCheckResourceAttr("omada_ap_wlan_group.test", "ap_name", "AP Test"),
 				),
 			},
@@ -121,11 +128,11 @@ func TestAcc_ApWlanGroupResource(t *testing.T) {
 				resource "omada_ap_wlan_group" "test" {
 					site_id       = "test-site-id"
 					ap_mac        = "A4-2B-B0-11-22-33"
-					wlan_group_id = "staging-group"
+					wlan_group_id = "638ef75a73919c1e1734f88b"
 				}
 				`,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("omada_ap_wlan_group.test", "wlan_group_id", "staging-group"),
+					resource.TestCheckResourceAttr("omada_ap_wlan_group.test", "wlan_group_id", "638ef75a73919c1e1734f88b"),
 				),
 			},
 			// Drift: the AP is forgotten upstream (overview read returns -1001).
