@@ -1,3 +1,13 @@
+## 0.13.2
+
+FIXES:
+- `omada_ap_wlan_group`: add `wlanId` to the overview group-id key scan. Live
+  capture on 6.2.10.18 showed `GET /aps/{apMac}` keys the bound group under
+  `wlanId` (the same field the WLAN-group create returns), not any of the
+  spellings v0.13.1 tried, so imported bindings still read back an empty
+  `wlan_group_id`. With `wlanId` first in the candidate list a refresh now
+  self-heals the state and the baseline plans to a no-op (homelab #157).
+
 ## 0.13.1
 
 FIXES:

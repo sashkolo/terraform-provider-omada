@@ -37,11 +37,13 @@ type apOverviewRead struct {
 }
 
 // wlanGroupIDKeys are the candidate JSON keys the AP overview may carry the
-// current WLAN group id under. The SDK model ApOverviewInfo declares the spaced
-// key "wlan group id" (a codegen artifact from the spec's field label), but live
-// firmware has been observed to key it differently (or to camelCase it), so the
-// decode tries each spelling. Order is most-to-least likely.
+// current WLAN group id under. On live firmware (6.2.10.18) the overview
+// (`GET /aps/{apMac}`) keys it as "wlanId" — the same field the WLAN-group
+// create returns — not the spaced "wlan group id" the SDK model ApOverviewInfo
+// declares (a codegen artifact from the spec's field label). The decode tries
+// each spelling; order is most-to-least likely, with the observed live key first.
 var wlanGroupIDKeys = []string{
+	"wlanId",
 	"wlanGroupId",
 	"wlan group id",
 	"wlanGroupID",
