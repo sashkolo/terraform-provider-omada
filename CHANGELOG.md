@@ -1,3 +1,12 @@
+## Unreleased
+
+FEATURES:
+- Added `omada_port_forwarding`, a full CRUD/import resource for explicit
+  gateway TCP/UDP port and port-range mappings. It supports physical/virtual WAN
+  and WAN-IP selectors plus optional source-address restrictions. DMZ is
+  deliberately excluded so an all-ports exposure cannot be represented as an
+  ordinary port-forwarding rule (homelab #80 / #199).
+
 ## 0.13.2
 
 FIXES:
