@@ -6,6 +6,10 @@ import (
 )
 
 func stringsToList(values []string) types.List {
+	// These schema attributes are Optional+Computed. Return a known empty list
+	// even when the controller omitted the JSON field: this is a valid computed
+	// value for omitted configuration and, importantly, preserves an explicit
+	// `[]` in configuration without producing an inconsistent result after apply.
 	elements := make([]attr.Value, 0, len(values))
 	for _, value := range values {
 		elements = append(elements, types.StringValue(value))
@@ -15,6 +19,9 @@ func stringsToList(values []string) types.List {
 }
 
 func portIpsToMap(values []portIpRead) types.Map {
+	// wan_ips is also Optional+Computed; use a known empty map for the same
+	// explicit-empty versus omitted-controller-field normalization described in
+	// stringsToList.
 	elements := make(map[string]attr.Value, len(values))
 	for _, value := range values {
 		if value.WanId == nil || *value.WanId == "" || value.Ip == nil || *value.Ip == "" {

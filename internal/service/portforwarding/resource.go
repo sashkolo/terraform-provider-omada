@@ -408,10 +408,18 @@ func fetchList(ctx context.Context, diags *diag.Diagnostics, r *portForwardingRe
 			return nil
 		}
 		rows = append(rows, result.Data...)
-		if result.TotalRows == nil || int64(len(rows)) >= *result.TotalRows || len(result.Data) == 0 {
+		if listComplete(len(result.Data), len(rows), result.TotalRows) {
 			return rows
 		}
 	}
+}
+
+// listComplete determines whether a paged list has been exhausted. Some
+// controller versions omit totalRows, so a full page must be treated as
+// evidence that another page may exist; a short page is the fallback end
+// marker. When totalRows is present, reaching it also ends pagination.
+func listComplete(pageRows, accumulatedRows int, totalRows *int64) bool {
+	return pageRows < int(listPageSize) || (totalRows != nil && int64(accumulatedRows) >= *totalRows)
 }
 
 func findByID(ctx context.Context, diags *diag.Diagnostics, r *portForwardingResource, model *portForwardingResourceModel) *portForwardingReadRow {
