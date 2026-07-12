@@ -3,6 +3,7 @@ package portforwarding_test
 import (
 	"encoding/json"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"terraform-provider-omada/internal/acctest"
 	"testing"
@@ -53,6 +54,8 @@ func TestAcc_PortForwardingResource(t *testing.T) {
 	}
 
 	var listReads int32
+	var rowMutex sync.Mutex
+	var pendingRow map[string]any
 	mux.HandleFunc("POST /openapi/v1/{omadacId}/sites/{siteId}/nat/port-forwardings", func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -70,6 +73,17 @@ func TestAcc_PortForwardingResource(t *testing.T) {
 	mux.HandleFunc("GET /openapi/v1/{omadacId}/sites/{siteId}/nat/port-forwardings", func(w http.ResponseWriter, _ *http.Request) {
 		if atomic.AddInt32(&listReads, 1) == 1 {
 			writeJSON(w, listResponse())
+			return
+		}
+		rowMutex.Lock()
+		defer rowMutex.Unlock()
+		if pendingRow != nil {
+			// The first read after an update still exposes the old row, then the
+			// controller's list catches up. Update must retry until it observes
+			// the desired values instead of flattening this stale response.
+			writeJSON(w, listResponse(row))
+			row = pendingRow
+			pendingRow = nil
 			return
 		}
 		writeJSON(w, listResponse(row))
@@ -92,17 +106,23 @@ func TestAcc_PortForwardingResource(t *testing.T) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		row["name"] = body.Name
-		row["status"] = body.Status
-		row["externalPort"] = body.ExternalPort
-		row["forwardIp"] = body.ForwardIp
-		row["forwardPort"] = body.ForwardPort
-		row["protocol"] = body.Protocol
-		row["from"] = body.From
-		row["interfaceWanPortId"] = body.InterfaceWanPortId
-		row["limitedAddresses"] = body.LimitedAddresses
-		row["virtualWanId"] = body.VirtualWanId
-		row["wanIps"] = body.WanIps
+		rowMutex.Lock()
+		pendingRow = make(map[string]any, len(row))
+		for key, value := range row {
+			pendingRow[key] = value
+		}
+		pendingRow["name"] = body.Name
+		pendingRow["status"] = body.Status
+		pendingRow["externalPort"] = body.ExternalPort
+		pendingRow["forwardIp"] = body.ForwardIp
+		pendingRow["forwardPort"] = body.ForwardPort
+		pendingRow["protocol"] = body.Protocol
+		pendingRow["from"] = body.From
+		pendingRow["interfaceWanPortId"] = body.InterfaceWanPortId
+		pendingRow["limitedAddresses"] = body.LimitedAddresses
+		pendingRow["virtualWanId"] = body.VirtualWanId
+		pendingRow["wanIps"] = body.WanIps
+		rowMutex.Unlock()
 		writeJSON(w, `{"errorCode":0,"msg":"Success."}`)
 	})
 	mux.HandleFunc("DELETE /openapi/v1/{omadacId}/sites/{siteId}/nat/port-forwardings/{portForwardingId}", func(w http.ResponseWriter, _ *http.Request) {

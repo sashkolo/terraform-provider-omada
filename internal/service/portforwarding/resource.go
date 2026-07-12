@@ -470,6 +470,9 @@ func awaitRead(ctx context.Context, diags *diag.Diagnostics, r *portForwardingRe
 			diags.AddError("Unsupported DMZ rule", "The controller returned the managed rule with DMZ enabled; refusing to represent an all-ports exposure as omada_port_forwarding.")
 			return false
 		}
+		if !rowMatchesModel(row, model) {
+			return false
+		}
 		flattenPortForwarding(model, row)
 		return true
 	})
