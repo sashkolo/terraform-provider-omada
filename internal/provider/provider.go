@@ -16,6 +16,7 @@ import (
 	"terraform-provider-omada/internal/service/ipgroup"
 	"terraform-provider-omada/internal/service/ipportgroup"
 	"terraform-provider-omada/internal/service/lannetwork"
+	"terraform-provider-omada/internal/service/portforwarding"
 	"terraform-provider-omada/internal/service/site"
 	"terraform-provider-omada/internal/service/ssid"
 	"terraform-provider-omada/internal/service/switchport"
@@ -308,5 +309,6 @@ func (p *omadaProvider) Resources(_ context.Context) []func() resource.Resource 
 		switchport.NewResource,
 		dhcpreservation.NewResource,
 		apwlangroup.NewResource,
+		portforwarding.NewResource,
 	}
 }
