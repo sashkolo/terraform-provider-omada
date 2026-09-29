@@ -7,7 +7,8 @@ import (
 	"strings"
 	"terraform-provider-omada/internal/client"
 	"terraform-provider-omada/internal/envelope"
-	"time"
+	"terraform-provider-omada/internal/retry"
+	"terraform-provider-omada/internal/tfstate"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -215,6 +216,11 @@ func (r *aclResource) Create(ctx context.Context, req resource.CreateRequest, re
 		return
 	}
 
+	checkReferencedIDs(plan, &resp.Diagnostics, "creating ACL")
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	_, httpResp, callErr := r.client.ACLAPI.CreateOsgAcl(ctx, r.omadacId, plan.SiteId.ValueString()).
 		GatewayACLConfig(expandGatewayACL(plan)).Execute()
 	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "creating ACL")
@@ -254,9 +260,14 @@ func (r *aclResource) Create(ctx context.Context, req resource.CreateRequest, re
 	}
 
 	if !awaitReadAcl(ctx, &resp.Diagnostics, r, &plan) {
+		// The rule exists on the controller: keep it in state (tainted) rather
+		// than orphaning it, so a re-apply replaces it instead of failing on a
+		// duplicate description (homelab #514).
+		resp.Diagnostics.Append(tfstate.SaveCreated(ctx, req.Plan, &resp.State, "acl_id", plan.AclId.ValueString())...)
 		resp.Diagnostics.AddError(
 			"Error creating ACL",
-			"The ACL was created but could not be read back within the retry window.",
+			fmt.Sprintf("ACL %s was created but could not be read back within the retry window. It is kept in "+
+				"state as tainted, so the next apply replaces it.", plan.AclId.ValueString()),
 		)
 		return
 	}
@@ -276,13 +287,18 @@ func (r *aclResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 		return
 	}
 
-	readAcl(ctx, &resp.Diagnostics, r, &state)
-
-	// When the ACL is gone upstream, readAcl clears AclId; leave resp.State unset
-	// so Terraform drops it from state.
-	if state.AclId.IsNull() {
+	row, found := findAclConfirmed(ctx, &resp.Diagnostics, r, &state)
+	if resp.Diagnostics.HasError() {
 		return
 	}
+	if !found {
+		// Deleted outside Terraform. Setting nothing would keep the prior state,
+		// which the framework pre-fills, so the rule would silently stay
+		// "managed" (homelab #514).
+		resp.State.RemoveResource(ctx)
+		return
+	}
+	flattenAclRead(&state, row)
 
 	diags = resp.State.Set(ctx, state)
 	resp.Diagnostics.Append(diags...)
@@ -305,6 +321,11 @@ func (r *aclResource) Update(ctx context.Context, req resource.UpdateRequest, re
 	}
 	plan.AclId = state.AclId
 	plan.SiteId = state.SiteId
+
+	checkReferencedIDs(plan, &resp.Diagnostics, "updating ACL")
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	_, httpResp, callErr := r.client.ACLAPI.ModifyOsgAcl(ctx, r.omadacId, plan.SiteId.ValueString(), plan.AclId.ValueString()).
 		GatewayACLConfig(expandGatewayACL(plan)).Execute()
@@ -341,13 +362,14 @@ func (r *aclResource) Delete(ctx context.Context, req resource.DeleteRequest, re
 		return
 	}
 
-	// A not-found on delete is a successful outcome (the resource is already
-	// gone, which is the desired end state). Read clears AclId when an ACL is
-	// removed upstream, so this only triggers when the ACL vanishes between
-	// refresh and destroy. The exact not-found code is controller-dependent;
-	// treat any non-zero code as an error for now and refine once confirmed
-	// against the live controller.
+	// A rejected delete of a rule that is already gone is the desired end
+	// state. The controller's not-found code isn't documented for this
+	// endpoint, so confirm against the list instead of trusting a code.
 	if env.HasError() {
+		var listDiags diag.Diagnostics
+		if _, found := findAclConfirmed(ctx, &listDiags, r, &state); !listDiags.HasError() && !found {
+			return
+		}
 		envelope.AddAPIError(&resp.Diagnostics, "deleting ACL", env.ErrorCode, env.Msg)
 		return
 	}
@@ -413,41 +435,49 @@ func findAclInList(ctx context.Context, diags *diag.Diagnostics, r *aclResource,
 	return nil
 }
 
-// readAcl refreshes the model from the list entry matching acl_id. Used by the
-// Read (refresh) path: when the ACL is gone upstream, it clears AclId so the
-// framework drops the resource from state. Create/Update use awaitReadAcl so the
-// create-returned id is preserved across the post-create propagation lag.
-func readAcl(ctx context.Context, diags *diag.Diagnostics, r *aclResource, model *aclResourceModel) {
-	if row := findAclInList(ctx, diags, r, model); row != nil {
-		flattenAclRead(model, row)
-		return
-	}
-	model.AclId = types.StringNull()
+// findAclConfirmed looks the model's acl_id up in the list. A miss is
+// re-checked a few times before it is believed, because the list is eventually
+// consistent; a found row is returned at once.
+func findAclConfirmed(ctx context.Context, diags *diag.Diagnostics, r *aclResource, model *aclResourceModel) (*aclReadRow, bool) {
+	var row *aclReadRow
+	found, last := retry.Until(ctx, goneConfirmations, retry.Interval, func(d *diag.Diagnostics) bool {
+		row = findAclInList(ctx, d, r, model)
+		// Stop on an error too: a failing list is not evidence of absence.
+		return row != nil || d.HasError()
+	})
+	diags.Append(last...)
+	return row, found && row != nil
 }
+
+// goneConfirmations is how many list reads must miss a rule before Read or
+// Delete treats it as deleted.
+const goneConfirmations = 3
 
 // awaitReadAcl retries the list read until the ACL is present, refreshing the
 // model in place. The controller's ACL state is eventually consistent, so a
 // freshly created/modified ACL may take a moment to appear in the list. It never
-// clears acl_id: the caller (Create/Update) already knows the id. A propagation
-// lag is not an API error (the list returns success), so no diagnostic is added
-// while retrying; a persistent real error surfaces after the budget is spent.
+// clears acl_id: the caller (Create/Update) already knows the id. Only the last
+// attempt's diagnostics are kept, so a transient error doesn't fail the apply.
 func awaitReadAcl(ctx context.Context, diags *diag.Diagnostics, r *aclResource, model *aclResourceModel) bool {
-	return runWithBackoff(ctx, func() bool {
-		if row := findAclInList(ctx, diags, r, model); row != nil {
+	ok, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {
+		if row := findAclInList(ctx, d, r, model); row != nil {
 			flattenAclRead(model, row)
 			return true
 		}
 		return false
 	})
+	diags.Append(last...)
+	return ok
 }
 
 // awaitFindAclByDescription retries the description-based list lookup until the
 // ACL is present, setting model.AclId. Used after create when the create
-// response omitted the id.
+// response omitted the id. Descriptions are unique per site (the controller
+// rejects a duplicate with -33006), so a match is the rule just created.
 func awaitFindAclByDescription(ctx context.Context, diags *diag.Diagnostics, r *aclResource, model *aclResourceModel) bool {
-	return runWithBackoff(ctx, func() bool {
-		data := fetchAclList(ctx, diags, r, model)
-		if diags.HasError() {
+	ok, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {
+		data := fetchAclList(ctx, d, r, model)
+		if d.HasError() {
 			return false
 		}
 		for i := range data {
@@ -458,28 +488,6 @@ func awaitFindAclByDescription(ctx context.Context, diags *diag.Diagnostics, r *
 		}
 		return false
 	})
-}
-
-// readAttempts/readInterval bound the post-create read retry. The controller is
-// expected to reflect a create within a few seconds; this is a safety margin,
-// not a long poll.
-const (
-	readAttempts = 10
-	readInterval = 750 * time.Millisecond
-)
-
-// runWithBackoff repeats fn until it returns true or the attempt budget is
-// exhausted. It honors context cancellation between attempts.
-func runWithBackoff(ctx context.Context, fn func() bool) bool {
-	for attempt := 0; attempt < readAttempts; attempt++ {
-		if fn() {
-			return true
-		}
-		select {
-		case <-time.After(readInterval):
-		case <-ctx.Done():
-			return false
-		}
-	}
-	return false
+	diags.Append(last...)
+	return ok
 }

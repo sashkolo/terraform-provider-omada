@@ -1,14 +1,18 @@
 package acl
 
 import (
+	"fmt"
+
 	"github.com/Tohaker/omada-go-sdk/omada"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 // listToStringSlice converts a Terraform types.List of strings into the SDK
-// slice. Always returns a non-nil slice so it serializes as [] when empty.
-// Tolerates null/unknown elements (e.g. during the create plan before the
-// controller resolves destination ids).
+// slice. Always returns a non-nil slice so it serializes as [] when empty. A
+// wholly unknown list (destination ids the controller resolves) yields [].
+// Null elements are skipped here, but Create and Update reject them first with
+// checkReferencedIDs, because dropping one silently widens or empties a rule.
 func listToStringSlice(l types.List) []string {
 	out := make([]string, 0, len(l.Elements()))
 	for _, el := range l.Elements() {
@@ -94,5 +98,22 @@ func expandGatewayACL(plan aclResourceModel) omada.GatewayACLConfig {
 		Status:          plan.Status.ValueBool(),
 		Syslog:          plan.Syslog.ValueBool(),
 		TimeRangeId:     plan.TimeRangeId.ValueStringPointer(),
+	}
+}
+
+// checkReferencedIDs rejects a null or unknown id inside source_ids or
+// destination_ids at apply time. A null element means a referenced object has
+// no id (for example a group whose create lost it); skipping it would send an
+// empty or narrower id list and change what the rule matches (homelab #514).
+func checkReferencedIDs(plan aclResourceModel, diags *diag.Diagnostics, action string) {
+	for i, v := range plan.SourceIds {
+		if v.IsNull() || v.IsUnknown() {
+			diags.AddError("Error "+action, fmt.Sprintf("source_ids[%d] has no value: a referenced object has no id.", i))
+		}
+	}
+	for i, el := range plan.DestinationIds.Elements() {
+		if s, ok := el.(types.String); !ok || s.IsNull() || s.IsUnknown() {
+			diags.AddError("Error "+action, fmt.Sprintf("destination_ids[%d] has no value: a referenced object has no id.", i))
+		}
 	}
 }

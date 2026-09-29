@@ -2,13 +2,6 @@ package ssid
 
 import "github.com/Tohaker/omada-go-sdk/omada"
 
-const (
-	// errNotFound is the Omada Open API error code the controller returns for
-	// a missing SSID on 5.15.x. Read/Delete use it to tolerate an SSID that is
-	// already gone upstream.
-	errNotFound int32 = -1001
-)
-
 // Defaults mirror the controller's own observed values on firmware 5.15.8.12
 // (captured from a live WPA-Personal SSID during the #54 capability probe).
 // They keep create payloads consistent with what the UI would produce while

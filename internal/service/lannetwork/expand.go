@@ -14,7 +14,7 @@ const (
 	// multi-VLAN network (vlanType 1).
 	vlanTypeSingle int32 = 0
 	// errNetworkNotFound is the Omada Open API error code for a missing LAN
-	// network. Read uses it to detect remote deletion.
+	// network. Delete treats it as already gone.
 	errNetworkNotFound int32 = -33503
 )
 

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"terraform-provider-omada/internal/client"
 	"terraform-provider-omada/internal/envelope"
+	"terraform-provider-omada/internal/retry"
+	"terraform-provider-omada/internal/tfstate"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -158,13 +160,20 @@ func (r *reservationResource) Create(ctx context.Context, req resource.CreateReq
 		}
 	}
 
-	if !readReservation(ctx, &resp.Diagnostics, r, &plan) {
-		if !resp.Diagnostics.HasError() {
-			resp.Diagnostics.AddError(
-				"Error creating DHCP reservation",
-				fmt.Sprintf("The reservation for MAC %s was not present on the site after create.", plan.Mac.ValueString()),
-			)
+	if !awaitReadReservation(ctx, &resp.Diagnostics, r, &plan) {
+		// The POST succeeded, so the reservation exists on the controller: keep
+		// it in state (tainted) under its MAC, the key Delete addresses, rather
+		// than orphaning it. A re-apply then replaces it instead of failing on a
+		// duplicate MAC (homelab #514).
+		resp.Diagnostics.Append(tfstate.SaveCreated(ctx, req.Plan, &resp.State, "mac", plan.Mac.ValueString())...)
+		if !plan.ReservationId.IsUnknown() && !plan.ReservationId.IsNull() {
+			resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("reservation_id"), plan.ReservationId)...)
 		}
+		resp.Diagnostics.AddError(
+			"Error creating DHCP reservation",
+			fmt.Sprintf("The reservation for MAC %s was created but could not be read back within the retry window. "+
+				"It is kept in state as tainted, so the next apply replaces it.", plan.Mac.ValueString()),
+		)
 		return
 	}
 
@@ -183,10 +192,16 @@ func (r *reservationResource) Read(ctx context.Context, req resource.ReadRequest
 		return
 	}
 
-	if !readReservation(ctx, &resp.Diagnostics, r, &state) {
-		if resp.Diagnostics.HasError() {
-			return
-		}
+	// A miss is re-checked before it is believed, because the grid is eventually
+	// consistent; a list error is not evidence of absence (homelab #514).
+	found, last := retry.Until(ctx, goneConfirmations, retry.Interval, func(d *diag.Diagnostics) bool {
+		return readReservation(ctx, d, r, &state) || d.HasError()
+	})
+	resp.Diagnostics.Append(last...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if !found {
 		// Gone upstream: drop it from state so Terraform plans a re-create.
 		resp.State.RemoveResource(ctx)
 		return
@@ -228,7 +243,7 @@ func (r *reservationResource) Update(ctx context.Context, req resource.UpdateReq
 		return
 	}
 
-	if !readReservation(ctx, &resp.Diagnostics, r, &plan) {
+	if !awaitReadReservation(ctx, &resp.Diagnostics, r, &plan) {
 		if !resp.Diagnostics.HasError() {
 			resp.Diagnostics.AddError(
 				"Error updating DHCP reservation",
@@ -357,6 +372,22 @@ func readReservation(ctx context.Context, diags *diag.Diagnostics, r *reservatio
 	}
 
 	return false
+}
+
+// goneConfirmations is how many grid reads must miss a reservation before Read
+// treats it as deleted.
+const goneConfirmations = 3
+
+// awaitReadReservation retries readReservation until the reservation is present,
+// refreshing the model in place. The grid is eventually consistent, so a freshly
+// created or modified reservation may take a moment to appear. Only the last
+// attempt's diagnostics are kept, so a transient error doesn't fail the apply.
+func awaitReadReservation(ctx context.Context, diags *diag.Diagnostics, r *reservationResource, model *reservationResourceModel) bool {
+	ok, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {
+		return readReservation(ctx, d, r, model)
+	})
+	diags.Append(last...)
+	return ok
 }
 
 // normalizeMAC lowercases a MAC and strips the common separators so matching is

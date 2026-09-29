@@ -7,6 +7,8 @@ import (
 	"strings"
 	"terraform-provider-omada/internal/client"
 	"terraform-provider-omada/internal/envelope"
+	"terraform-provider-omada/internal/retry"
+	"terraform-provider-omada/internal/tfstate"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -196,7 +198,10 @@ func (r *lanNetworkResource) Create(ctx context.Context, req resource.CreateRequ
 			plan.NetworkId = types.StringValue(*cr.Id)
 		}
 	}
-	if plan.NetworkId.IsNull() && !findLanNetworkByName(ctx, &resp.Diagnostics, r, &plan) {
+	// network_id is Computed, so it is Unknown (not Null) at create time; the
+	// name lookup must run for both, or a create result without an id stores a
+	// null network_id (homelab #514).
+	if (plan.NetworkId.IsUnknown() || plan.NetworkId.IsNull()) && !awaitFindLanNetworkByName(ctx, &resp.Diagnostics, r, &plan) {
 		resp.Diagnostics.AddError(
 			"Error creating LAN network",
 			"Create did not return an id and the network was not present in the site afterwards.",
@@ -204,7 +209,16 @@ func (r *lanNetworkResource) Create(ctx context.Context, req resource.CreateRequ
 		return
 	}
 
-	if !readLanNetwork(ctx, &resp.Diagnostics, r, &plan) {
+	if !awaitReadLanNetwork(ctx, &resp.Diagnostics, r, &plan) {
+		// The network exists on the controller: keep it in state (tainted)
+		// rather than orphaning it, so a re-apply replaces it instead of failing
+		// on a duplicate name or VLAN (homelab #514).
+		resp.Diagnostics.Append(tfstate.SaveCreated(ctx, req.Plan, &resp.State, "network_id", plan.NetworkId.ValueString())...)
+		resp.Diagnostics.AddError(
+			"Error creating LAN network",
+			fmt.Sprintf("LAN network %s was created but could not be read back within the retry window. It is kept in "+
+				"state as tainted, so the next apply replaces it.", plan.NetworkId.ValueString()),
+		)
 		return
 	}
 
@@ -223,13 +237,18 @@ func (r *lanNetworkResource) Read(ctx context.Context, req resource.ReadRequest,
 		return
 	}
 
-	readLanNetwork(ctx, &resp.Diagnostics, r, &state)
-
-	// When the network is gone upstream, readLanNetwork clears NetworkId; leave
-	// resp.State unset so Terraform drops it from state.
-	if state.NetworkId.IsNull() {
+	row, found := findLanNetworkConfirmed(ctx, &resp.Diagnostics, r, &state)
+	if resp.Diagnostics.HasError() {
 		return
 	}
+	if !found {
+		// Deleted outside Terraform. Setting nothing would keep the prior state,
+		// which the framework pre-fills, so the network would silently stay
+		// "managed" (homelab #514).
+		resp.State.RemoveResource(ctx)
+		return
+	}
+	flattenLanNetworkRead(&state, row)
 
 	diags = resp.State.Set(ctx, state)
 	resp.Diagnostics.Append(diags...)
@@ -265,7 +284,13 @@ func (r *lanNetworkResource) Update(ctx context.Context, req resource.UpdateRequ
 		return
 	}
 
-	if !readLanNetwork(ctx, &resp.Diagnostics, r, &plan) {
+	if !awaitReadLanNetwork(ctx, &resp.Diagnostics, r, &plan) {
+		if !resp.Diagnostics.HasError() {
+			resp.Diagnostics.AddError(
+				"Error updating LAN network",
+				fmt.Sprintf("LAN network %s was not present in the site after update.", plan.NetworkId.ValueString()),
+			)
+		}
 		return
 	}
 
@@ -289,8 +314,14 @@ func (r *lanNetworkResource) Delete(ctx context.Context, req resource.DeleteRequ
 	}
 
 	// -33503 (network does not exist) is a successful delete: the resource is
-	// already gone, which is the desired end state.
-	if env.HasError() && env.ErrorCode != nil && *env.ErrorCode != errNetworkNotFound {
+	// already gone, which is the desired end state. Any other controller error
+	// is also success when a confirmed re-list shows the network gone, since
+	// not every firmware answers a missing network with that code.
+	if env.HasError() && env.Code() != errNetworkNotFound {
+		var listDiags diag.Diagnostics
+		if _, found := findLanNetworkConfirmed(ctx, &listDiags, r, &state); !listDiags.HasError() && !found {
+			return
+		}
 		envelope.AddAPIError(&resp.Diagnostics, "deleting LAN network", env.ErrorCode, env.Msg)
 		return
 	}
@@ -340,43 +371,76 @@ func fetchLanNetworkList(ctx context.Context, diags *diag.Diagnostics, r *lanNet
 	return lr.Data
 }
 
-// findLanNetworkByName locates the network matching the model's name (used after
-// create when the id is not returned). Sets model.NetworkId on success; returns
-// false if not found.
-func findLanNetworkByName(ctx context.Context, diags *diag.Diagnostics, r *lanNetworkResource, model *lanNetworkResourceModel) bool {
+// findLanNetworkInList fetches the LAN-network list and returns the entry
+// matching the model's network_id (nil if not present). It does not mutate the
+// model.
+func findLanNetworkInList(ctx context.Context, diags *diag.Diagnostics, r *lanNetworkResource, model *lanNetworkResourceModel) *lanNetworkReadRow {
 	data := fetchLanNetworkList(ctx, diags, r, model)
 	if diags.HasError() {
-		return false
+		return nil
 	}
-
+	want := model.NetworkId.ValueString()
 	for i := range data {
-		if data[i].Name == model.Name.ValueString() {
-			model.NetworkId = types.StringPointerValue(data[i].Id)
-			return true
+		if data[i].Id != nil && *data[i].Id == want {
+			return &data[i]
 		}
 	}
-
-	return false
+	return nil
 }
 
-// readLanNetwork selects the list entry matching the model's network_id and
-// refreshes the model in place. When the network no longer exists, it clears
-// model.NetworkId so the caller can drop the resource from state.
-func readLanNetwork(ctx context.Context, diags *diag.Diagnostics, r *lanNetworkResource, model *lanNetworkResourceModel) bool {
-	data := fetchLanNetworkList(ctx, diags, r, model)
-	if diags.HasError() {
-		return false
-	}
+// findLanNetworkConfirmed looks the model's network_id up in the list. A miss
+// is re-checked a few times before it is believed, because the list is
+// eventually consistent; a found row is returned at once.
+func findLanNetworkConfirmed(ctx context.Context, diags *diag.Diagnostics, r *lanNetworkResource, model *lanNetworkResourceModel) (*lanNetworkReadRow, bool) {
+	var row *lanNetworkReadRow
+	found, last := retry.Until(ctx, goneConfirmations, retry.Interval, func(d *diag.Diagnostics) bool {
+		row = findLanNetworkInList(ctx, d, r, model)
+		// Stop on an error too: a failing list is not evidence of absence.
+		return row != nil || d.HasError()
+	})
+	diags.Append(last...)
+	return row, found && row != nil
+}
 
-	for i := range data {
-		row := &data[i]
-		if row.Id != nil && *row.Id == model.NetworkId.ValueString() {
+// goneConfirmations is how many list reads must miss a network before Read or
+// Delete treats it as deleted.
+const goneConfirmations = 3
+
+// awaitReadLanNetwork retries the list read until the network is present,
+// refreshing the model in place. A freshly created or modified network may take
+// a moment to appear in the list. It never clears network_id: the caller
+// (Create/Update) already knows the id. Only the last attempt's diagnostics are
+// kept, so a transient error doesn't fail the apply.
+func awaitReadLanNetwork(ctx context.Context, diags *diag.Diagnostics, r *lanNetworkResource, model *lanNetworkResourceModel) bool {
+	ok, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {
+		if row := findLanNetworkInList(ctx, d, r, model); row != nil {
 			flattenLanNetworkRead(model, row)
 			return true
 		}
-	}
+		return false
+	})
+	diags.Append(last...)
+	return ok
+}
 
-	// Not present in the list: the network is gone upstream.
-	model.NetworkId = types.StringNull()
-	return true
+// awaitFindLanNetworkByName retries the name-based list lookup until the network
+// is present, setting model.NetworkId. Used after create when the create result
+// omitted the id. Names are unique within a site, so a match is the network
+// just created.
+func awaitFindLanNetworkByName(ctx context.Context, diags *diag.Diagnostics, r *lanNetworkResource, model *lanNetworkResourceModel) bool {
+	ok, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {
+		data := fetchLanNetworkList(ctx, d, r, model)
+		if d.HasError() {
+			return false
+		}
+		for i := range data {
+			if data[i].Name == model.Name.ValueString() && data[i].Id != nil && *data[i].Id != "" {
+				model.NetworkId = types.StringValue(*data[i].Id)
+				return true
+			}
+		}
+		return false
+	})
+	diags.Append(last...)
+	return ok
 }

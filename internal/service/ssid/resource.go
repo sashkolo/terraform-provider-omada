@@ -7,7 +7,8 @@ import (
 	"strings"
 	"terraform-provider-omada/internal/client"
 	"terraform-provider-omada/internal/envelope"
-	"time"
+	"terraform-provider-omada/internal/retry"
+	"terraform-provider-omada/internal/tfstate"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -221,7 +222,10 @@ func (r *ssidResource) Create(ctx context.Context, req resource.CreateRequest, r
 			}
 		}
 	}
-	if plan.SsidId.IsNull() && !awaitFindSsidByName(ctx, &resp.Diagnostics, r, &plan) {
+
+	// ssid_id is Computed, so it is Unknown (not Null) at create time; testing
+	// only IsNull skipped the name lookup and read back an empty id.
+	if (plan.SsidId.IsUnknown() || plan.SsidId.IsNull()) && !awaitFindSsidByName(ctx, &resp.Diagnostics, r, &plan) {
 		resp.Diagnostics.AddError(
 			"Error creating SSID",
 			"Create did not return an id and the SSID was not present in the WLAN group afterwards.",
@@ -230,9 +234,14 @@ func (r *ssidResource) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 
 	if !awaitReadSsid(ctx, &resp.Diagnostics, r, &plan) {
+		// The SSID exists on the controller: keep it in state (tainted) rather
+		// than orphaning it, so a re-apply replaces it instead of creating a
+		// second SSID of the same name (homelab #514).
+		resp.Diagnostics.Append(tfstate.SaveCreated(ctx, req.Plan, &resp.State, "ssid_id", plan.SsidId.ValueString())...)
 		resp.Diagnostics.AddError(
 			"Error creating SSID",
-			"The SSID was created but could not be read back within the retry window.",
+			fmt.Sprintf("SSID %s was created but could not be read back within the retry window. It is kept in "+
+				"state as tainted, so the next apply replaces it.", plan.SsidId.ValueString()),
 		)
 		return
 	}
@@ -242,8 +251,8 @@ func (r *ssidResource) Create(ctx context.Context, req resource.CreateRequest, r
 }
 
 // Read refreshes the Terraform state with the latest data via the single-SSID
-// detail endpoint. When the SSID is gone upstream, the SSID ID is cleared so
-// Terraform drops the resource from state.
+// detail endpoint. A failed detail read is checked against the WLAN group's
+// SSID list before the SSID is treated as deleted.
 func (r *ssidResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state ssidResourceModel
 	diags := req.State.Get(ctx, &state)
@@ -252,9 +261,15 @@ func (r *ssidResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	readSsid(ctx, &resp.Diagnostics, r, &state)
-
-	if state.SsidId.IsNull() {
+	found := readSsid(ctx, &resp.Diagnostics, r, &state)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if !found {
+		// Deleted outside Terraform. Setting nothing would keep the prior state,
+		// which the framework pre-fills, so the SSID would silently stay
+		// "managed" (homelab #514).
+		resp.State.RemoveResource(ctx)
 		return
 	}
 
@@ -293,7 +308,11 @@ func (r *ssidResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	if !readSsid(ctx, &resp.Diagnostics, r, &plan) {
+	if !awaitReadSsid(ctx, &resp.Diagnostics, r, &plan) {
+		resp.Diagnostics.AddError(
+			"Error updating SSID",
+			fmt.Sprintf("SSID %s was updated but could not be read back within the retry window.", plan.SsidId.ValueString()),
+		)
 		return
 	}
 
@@ -316,9 +335,15 @@ func (r *ssidResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 		return
 	}
 
-	// -1001 (invalid request parameters) is returned when the SSID no longer
-	// exists on 5.15.x; that is the desired end state for a delete.
-	if env.HasError() && env.ErrorCode != nil && *env.ErrorCode != errNotFound {
+	// A rejected delete of an SSID that is already gone is the desired end
+	// state. The controller answers a missing SSID with -1001, which is also
+	// its generic "invalid request parameters", so a code alone once dropped a
+	// live SSID from state; confirm against the list instead (homelab #514).
+	if env.HasError() {
+		var listDiags diag.Diagnostics
+		if listed := ssidListedConfirmed(ctx, &listDiags, r, &state); !listDiags.HasError() && !listed {
+			return
+		}
 		envelope.AddAPIError(&resp.Diagnostics, "deleting SSID", env.ErrorCode, env.Msg)
 		return
 	}
@@ -343,34 +368,117 @@ func (r *ssidResource) ImportState(ctx context.Context, req resource.ImportState
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("ssid_id"), idParts[2])...)
 }
 
-// findSsidByName locates the SSID matching the model's name within its WLAN
-// group (used after create when the id is not returned). Sets model.SsidId on
-// success; returns false if not found.
-func findSsidByName(ctx context.Context, diags *diag.Diagnostics, r *ssidResource, model *ssidResourceModel) bool {
+// fetchSsidList fetches the SSID list of the model's WLAN group and decodes it
+// leniently. The controller also rejects the list of a WLAN group that no
+// longer exists (its SSIDs went with it); only when the group is missing from
+// the site's group list is that rejection read as an empty list.
+func fetchSsidList(ctx context.Context, diags *diag.Diagnostics, r *ssidResource, model *ssidResourceModel) []ssidListRow {
 	_, httpResp, callErr := r.client.WirelessNetworkAPI.GetSsidList(ctx, r.omadacId, model.SiteId.ValueString(), model.WlanGroupId.ValueString()).
 		Page(1).PageSize(1000).Execute()
 	env, ok := envelope.Decode(httpResp, callErr, diags, "reading SSID")
 	if !ok {
-		return false
+		return nil
 	}
 
 	if env.HasError() {
+		var groupDiags diag.Diagnostics
+		if !wlanGroupListed(ctx, &groupDiags, r, model) && !groupDiags.HasError() {
+			return nil
+		}
 		diags.AddError(
 			"Error reading SSID",
 			fmt.Sprintf("Controller rejected the SSID list for WLAN group %s, error code %d: %s", model.WlanGroupId.ValueString(), *env.ErrorCode, env.Msg),
 		)
-		return false
+		return nil
 	}
 
 	var lr ssidListResult
 	if err := json.Unmarshal(env.Result, &lr); err != nil {
 		diags.AddError("Error reading SSID", "Could not decode SSID list: "+err.Error())
+		return nil
+	}
+
+	return lr.Data
+}
+
+// wlanGroupListed reports whether the model's WLAN group is in the site's
+// WLAN-group list (a bare array on 5.15.x, or the paged {data} shape).
+func wlanGroupListed(ctx context.Context, diags *diag.Diagnostics, r *ssidResource, model *ssidResourceModel) bool {
+	_, httpResp, callErr := r.client.WirelessNetworkAPI.GetWlanGroupList(ctx, r.omadacId, model.SiteId.ValueString()).Execute()
+	env, ok := envelope.Decode(httpResp, callErr, diags, "reading WLAN group")
+	if !ok {
 		return false
 	}
 
-	for i := range lr.Data {
-		if lr.Data[i].Name != nil && *lr.Data[i].Name == model.Name.ValueString() {
-			model.SsidId = types.StringPointerValue(lr.Data[i].SsidId)
+	if env.HasError() {
+		envelope.AddAPIError(diags, "reading WLAN group", env.ErrorCode, env.Msg)
+		return false
+	}
+
+	var rows []wlanGroupRow
+	if err := json.Unmarshal(env.Result, &rows); err != nil {
+		var paged struct {
+			Data []wlanGroupRow `json:"data"`
+		}
+		if err := json.Unmarshal(env.Result, &paged); err != nil {
+			diags.AddError("Error reading WLAN group", "Could not decode WLAN-group list: "+err.Error())
+			return false
+		}
+		rows = paged.Data
+	}
+
+	for i := range rows {
+		if rows[i].WlanId != nil && *rows[i].WlanId == model.WlanGroupId.ValueString() {
+			return true
+		}
+	}
+	return false
+}
+
+// ssidListed reports whether the model's ssid_id is in its WLAN group's list.
+func ssidListed(ctx context.Context, diags *diag.Diagnostics, r *ssidResource, model *ssidResourceModel) bool {
+	rows := fetchSsidList(ctx, diags, r, model)
+	if diags.HasError() {
+		return false
+	}
+	for i := range rows {
+		if rows[i].SsidId != nil && *rows[i].SsidId == model.SsidId.ValueString() {
+			return true
+		}
+	}
+	return false
+}
+
+// ssidListedConfirmed looks the model's ssid_id up in the list. A miss is
+// re-checked a few times before it is believed, because the list is eventually
+// consistent; a hit is returned at once. Callers must check diags first: a
+// failing list is not evidence of absence.
+func ssidListedConfirmed(ctx context.Context, diags *diag.Diagnostics, r *ssidResource, model *ssidResourceModel) bool {
+	var listed bool
+	_, last := retry.Until(ctx, goneConfirmations, retry.Interval, func(d *diag.Diagnostics) bool {
+		listed = ssidListed(ctx, d, r, model)
+		return listed || d.HasError()
+	})
+	diags.Append(last...)
+	return listed
+}
+
+// goneConfirmations is how many list reads must miss an SSID before Read or
+// Delete treats it as deleted.
+const goneConfirmations = 3
+
+// findSsidByName locates the SSID matching the model's name within its WLAN
+// group (used after create when the id is not returned). Sets model.SsidId on
+// success; returns false if not found.
+func findSsidByName(ctx context.Context, diags *diag.Diagnostics, r *ssidResource, model *ssidResourceModel) bool {
+	rows := fetchSsidList(ctx, diags, r, model)
+	if diags.HasError() {
+		return false
+	}
+
+	for i := range rows {
+		if rows[i].Name != nil && *rows[i].Name == model.Name.ValueString() {
+			model.SsidId = types.StringPointerValue(rows[i].SsidId)
 			return true
 		}
 	}
@@ -380,94 +488,93 @@ func findSsidByName(ctx context.Context, diags *diag.Diagnostics, r *ssidResourc
 
 // awaitFindSsidByName retries findSsidByName briefly. The controller's SSID
 // list is eventually consistent right after create, so a single immediate read
-// can miss an SSID that was just created.
+// can miss an SSID that was just created. Only the last attempt's diagnostics
+// are kept, so a transient error doesn't fail the apply.
 func awaitFindSsidByName(ctx context.Context, diags *diag.Diagnostics, r *ssidResource, model *ssidResourceModel) bool {
-	return runWithBackoff(ctx, func() bool {
-		return findSsidByName(ctx, diags, r, model)
+	ok, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {
+		return findSsidByName(ctx, d, r, model)
 	})
+	diags.Append(last...)
+	return ok
 }
 
-// readSsid fetches the SSID detail and refreshes the model in place. When the
-// SSID no longer exists, it clears model.SsidId so the caller can drop the
-// resource from state. The PSK is preserved from the prior model when the
-// controller masks it on read.
-func readSsid(ctx context.Context, diags *diag.Diagnostics, r *ssidResource, model *ssidResourceModel) bool {
+// getSsidDetail fetches the SSID detail. It returns the decoded detail, or nil
+// with the controller's refusal in refused when the controller answered but
+// did not return the SSID (an error code, or a result without an ssidId).
+// Transport and decode failures are added to diags.
+func getSsidDetail(ctx context.Context, diags *diag.Diagnostics, r *ssidResource, model *ssidResourceModel) (detail *ssidDetailReadVO, refused string) {
 	_, httpResp, callErr := r.client.WirelessNetworkAPI.GetSsidDetail(ctx, r.omadacId, model.SiteId.ValueString(), model.WlanGroupId.ValueString(), model.SsidId.ValueString()).Execute()
 	env, ok := envelope.Decode(httpResp, callErr, diags, "reading SSID")
 	if !ok {
-		return false
-	}
-
-	// -1001: the SSID is gone upstream. Drop it from state by clearing the id.
-	if env.HasError() && env.ErrorCode != nil && *env.ErrorCode == errNotFound {
-		model.SsidId = types.StringNull()
-		return true
+		return nil, ""
 	}
 
 	if env.HasError() {
-		diags.AddError(
-			"Error reading SSID",
-			fmt.Sprintf("Controller rejected the detail read for SSID %s, error code %d: %s", model.SsidId.ValueString(), *env.ErrorCode, env.Msg),
-		)
-		return false
+		return nil, fmt.Sprintf("Controller rejected the detail read for SSID %s, error code %d: %s.", model.SsidId.ValueString(), *env.ErrorCode, env.Msg)
 	}
 
-	var detail ssidDetailReadVO
-	if err := json.Unmarshal(env.Result, &detail); err != nil {
-		diags.AddError("Error reading SSID", "Could not decode SSID detail: "+err.Error())
-		return false
-	}
-
-	flattenSsidRead(model, &detail)
-	return true
-}
-
-// awaitReadSsid retries the detail read briefly after create so the just-created
-// SSID is reflected despite propagation lag. Unlike readSsid it never clears the
-// id (the SSID is known to exist; it just has not been readable yet). Returns
-// false only if it never becomes readable.
-func awaitReadSsid(ctx context.Context, diags *diag.Diagnostics, r *ssidResource, model *ssidResourceModel) bool {
-	return runWithBackoff(ctx, func() bool {
-		_, httpResp, callErr := r.client.WirelessNetworkAPI.GetSsidDetail(ctx, r.omadacId, model.SiteId.ValueString(), model.WlanGroupId.ValueString(), model.SsidId.ValueString()).Execute()
-		env, ok := envelope.Decode(httpResp, callErr, diags, "reading SSID")
-		if !ok {
-			return false
-		}
-		if env.HasError() {
-			// Not readable yet (propagation lag); retry. A real error will
-			// persist across attempts and surface after the budget is spent.
-			return false
-		}
-		var detail ssidDetailReadVO
-		if err := json.Unmarshal(env.Result, &detail); err != nil {
+	var d ssidDetailReadVO
+	if len(env.Result) > 0 {
+		if err := json.Unmarshal(env.Result, &d); err != nil {
 			diags.AddError("Error reading SSID", "Could not decode SSID detail: "+err.Error())
-			return false
+			return nil, ""
 		}
-		flattenSsidRead(model, &detail)
-		return true
-	})
+	}
+	if d.SsidId == nil {
+		return nil, fmt.Sprintf("Controller returned no detail for SSID %s.", model.SsidId.ValueString())
+	}
+	return &d, ""
 }
 
-// readAttempts/readInterval bound the post-create read retry. The controller is
-// expected to reflect a create within a few seconds; this is a safety margin,
-// not a long poll.
-const (
-	readAttempts = 10
-	readInterval = 750 * time.Millisecond
-)
+// readSsid fetches the SSID detail and refreshes the model in place. The PSK
+// is preserved from the prior model when the controller masks it on read.
+//
+// It returns false with no error only when the SSID is confirmed gone. The
+// controller answers a missing SSID with -1001, which is also its generic
+// "invalid request parameters", so a refused detail read is never believed on
+// its own: the WLAN group's SSID list must also miss the SSID. Believing the
+// code once risked dropping a live SSID from state (homelab #514).
+func readSsid(ctx context.Context, diags *diag.Diagnostics, r *ssidResource, model *ssidResourceModel) bool {
+	detail, refused := getSsidDetail(ctx, diags, r, model)
+	if diags.HasError() {
+		return false
+	}
+	if detail != nil {
+		flattenSsidRead(model, detail)
+		return true
+	}
 
-// runWithBackoff repeats fn until it returns true or the attempt budget is
-// exhausted. It honors context cancellation between attempts.
-func runWithBackoff(ctx context.Context, fn func() bool) bool {
-	for attempt := 0; attempt < readAttempts; attempt++ {
-		if fn() {
-			return true
-		}
-		select {
-		case <-time.After(readInterval):
-		case <-ctx.Done():
-			return false
-		}
+	var listDiags diag.Diagnostics
+	listed := ssidListedConfirmed(ctx, &listDiags, r, model)
+	if listDiags.HasError() {
+		diags.AddError("Error reading SSID", refused)
+		diags.Append(listDiags...)
+		return false
+	}
+	if listed {
+		diags.AddError("Error reading SSID", fmt.Sprintf("%s The SSID is still listed in WLAN group %s, so it is not "+
+			"treated as deleted.", refused, model.WlanGroupId.ValueString()))
 	}
 	return false
+}
+
+// awaitReadSsid retries the detail read briefly after create or update so the
+// SSID is reflected despite propagation lag. It never treats the SSID as gone:
+// the caller knows it exists. Only the last attempt's diagnostics are kept, so
+// a transient error doesn't fail the apply.
+func awaitReadSsid(ctx context.Context, diags *diag.Diagnostics, r *ssidResource, model *ssidResourceModel) bool {
+	ok, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {
+		detail, refused := getSsidDetail(ctx, d, r, model)
+		if d.HasError() {
+			return false
+		}
+		if detail == nil {
+			d.AddError("Error reading SSID", refused)
+			return false
+		}
+		flattenSsidRead(model, detail)
+		return true
+	})
+	diags.Append(last...)
+	return ok
 }

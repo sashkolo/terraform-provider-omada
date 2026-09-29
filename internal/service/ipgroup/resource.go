@@ -7,6 +7,8 @@ import (
 	"strings"
 	"terraform-provider-omada/internal/client"
 	"terraform-provider-omada/internal/envelope"
+	"terraform-provider-omada/internal/retry"
+	"terraform-provider-omada/internal/tfstate"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -158,7 +160,7 @@ func (r *ipGroupResource) Create(ctx context.Context, req resource.CreateRequest
 	// group_id is Computed, so it is Unknown (not Null) at create time. Treat both
 	// as "not yet known" so the name-based fallback runs if the create response
 	// ever omits the id (mirrors the omada_acl create-id recovery, fork v0.7.2).
-	if (plan.GroupId.IsUnknown() || plan.GroupId.IsNull()) && !findGroupByName(ctx, &resp.Diagnostics, r, &plan) {
+	if (plan.GroupId.IsUnknown() || plan.GroupId.IsNull()) && !awaitFindGroupByName(ctx, &resp.Diagnostics, r, &plan) {
 		resp.Diagnostics.AddError(
 			"Error creating IP group",
 			"Create did not return an id and the group was not present in the site afterwards.",
@@ -166,7 +168,16 @@ func (r *ipGroupResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	if !readGroup(ctx, &resp.Diagnostics, r, &plan) {
+	if !awaitReadGroup(ctx, &resp.Diagnostics, r, &plan) {
+		// The group exists on the controller: keep it in state (tainted) with
+		// the id the POST returned rather than a null id, which an ACL would
+		// reference as a null element (homelab #514).
+		resp.Diagnostics.Append(tfstate.SaveCreated(ctx, req.Plan, &resp.State, "group_id", plan.GroupId.ValueString())...)
+		resp.Diagnostics.AddError(
+			"Error creating IP group",
+			fmt.Sprintf("IP group %s was created but could not be read back within the retry window. It is "+
+				"kept in state as tainted, so the next apply replaces it.", plan.GroupId.ValueString()),
+		)
 		return
 	}
 
@@ -185,16 +196,17 @@ func (r *ipGroupResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
-	if !readGroup(ctx, &resp.Diagnostics, r, &state) {
+	row, found := findGroupConfirmed(ctx, &resp.Diagnostics, r, &state)
+	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	// When the group is gone upstream, readGroup clears GroupId; drop it from
-	// state so Terraform plans a re-create.
-	if state.GroupId.IsNull() {
+	if !found {
+		// Gone upstream (confirmed by repeated misses, as the list is
+		// eventually consistent): drop it so Terraform plans a re-create.
 		resp.State.RemoveResource(ctx)
 		return
 	}
+	flattenGroupRead(&state, row)
 
 	diags = resp.State.Set(ctx, state)
 	resp.Diagnostics.Append(diags...)
@@ -229,7 +241,7 @@ func (r *ipGroupResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	if !readGroup(ctx, &resp.Diagnostics, r, &plan) {
+	if !awaitReadGroup(ctx, &resp.Diagnostics, r, &plan) {
 		return
 	}
 
@@ -256,7 +268,13 @@ func (r *ipGroupResource) Delete(ctx context.Context, req resource.DeleteRequest
 	// already gone, which is the desired end state. The controller also rejects
 	// deleting a group still referenced by an ACL (-33717); surface that as an
 	// error so the operator removes the reference first.
-	if env.HasError() && env.ErrorCode != nil && !errGroupNotFound[*env.ErrorCode] {
+	if env.HasError() && !errGroupNotFound[env.Code()] {
+		// Any other controller error is still success when a confirmed re-list
+		// shows the group absent (homelab #514); a referenced group stays listed.
+		var listDiags diag.Diagnostics
+		if _, found := findGroupConfirmed(ctx, &listDiags, r, &state); !listDiags.HasError() && !found {
+			return
+		}
 		envelope.AddAPIError(&resp.Diagnostics, "deleting IP group", env.ErrorCode, env.Msg)
 		return
 	}
@@ -311,43 +329,73 @@ func fetchGroupList(ctx context.Context, diags *diag.Diagnostics, r *ipGroupReso
 	return rows
 }
 
-// findGroupByName locates the group matching the model's name (used after create
-// when the id is not returned). Sets model.GroupId on success; returns false if
-// not found.
-func findGroupByName(ctx context.Context, diags *diag.Diagnostics, r *ipGroupResource, model *ipGroupResourceModel) bool {
+// findGroupInList fetches the list and returns the entry matching the model's
+// group_id (nil if not present). It does not mutate the model.
+func findGroupInList(ctx context.Context, diags *diag.Diagnostics, r *ipGroupResource, model *ipGroupResourceModel) *groupReadRow {
 	data := fetchGroupList(ctx, diags, r, model)
 	if diags.HasError() {
-		return false
+		return nil
 	}
-
+	want := model.GroupId.ValueString()
 	for i := range data {
-		if data[i].Name == model.Name.ValueString() {
-			model.GroupId = types.StringPointerValue(data[i].GroupId)
-			return true
+		if data[i].GroupId != nil && *data[i].GroupId == want {
+			return &data[i]
 		}
 	}
-
-	return false
+	return nil
 }
 
-// readGroup selects the list entry matching the model's group_id and refreshes
-// the model in place. When the group no longer exists, it clears model.GroupId
-// so the caller can drop the resource from state.
-func readGroup(ctx context.Context, diags *diag.Diagnostics, r *ipGroupResource, model *ipGroupResourceModel) bool {
-	data := fetchGroupList(ctx, diags, r, model)
-	if diags.HasError() {
-		return false
-	}
+// findGroupConfirmed looks the model's group_id up in the list. A miss is
+// re-checked a few times before it is believed, because the list is eventually
+// consistent; a found row is returned at once.
+func findGroupConfirmed(ctx context.Context, diags *diag.Diagnostics, r *ipGroupResource, model *ipGroupResourceModel) (*groupReadRow, bool) {
+	var row *groupReadRow
+	found, last := retry.Until(ctx, goneConfirmations, retry.Interval, func(d *diag.Diagnostics) bool {
+		row = findGroupInList(ctx, d, r, model)
+		// Stop on an error too: a failing list is not evidence of absence.
+		return row != nil || d.HasError()
+	})
+	diags.Append(last...)
+	return row, found && row != nil
+}
 
-	for i := range data {
-		row := &data[i]
-		if row.GroupId != nil && *row.GroupId == model.GroupId.ValueString() {
+// goneConfirmations is how many list reads must miss a group before Read or
+// Delete treats it as deleted.
+const goneConfirmations = 3
+
+// awaitReadGroup retries the list read until the group is present, refreshing
+// the model in place. It never clears group_id: Create and Update already know
+// the id, and a null id would reach any ACL that references the group (homelab
+// #514). Only the last attempt's diagnostics are kept.
+func awaitReadGroup(ctx context.Context, diags *diag.Diagnostics, r *ipGroupResource, model *ipGroupResourceModel) bool {
+	ok, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {
+		if row := findGroupInList(ctx, d, r, model); row != nil {
 			flattenGroupRead(model, row)
 			return true
 		}
-	}
+		return false
+	})
+	diags.Append(last...)
+	return ok
+}
 
-	// Not present in the list: the group is gone upstream.
-	model.GroupId = types.StringNull()
-	return true
+// awaitFindGroupByName retries the name-based list lookup until the group is
+// present, setting model.GroupId. Used after create when the create response
+// omitted the id; names are unique within a site.
+func awaitFindGroupByName(ctx context.Context, diags *diag.Diagnostics, r *ipGroupResource, model *ipGroupResourceModel) bool {
+	ok, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {
+		data := fetchGroupList(ctx, d, r, model)
+		if d.HasError() {
+			return false
+		}
+		for i := range data {
+			if data[i].GroupId != nil && *data[i].GroupId != "" && data[i].Name == model.Name.ValueString() {
+				model.GroupId = types.StringValue(*data[i].GroupId)
+				return true
+			}
+		}
+		return false
+	})
+	diags.Append(last...)
+	return ok
 }

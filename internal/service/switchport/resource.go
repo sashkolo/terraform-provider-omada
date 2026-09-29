@@ -20,6 +20,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
+// errDeviceNotFound is GetSwitchInfo's "This device does not exist" code: the
+// switch was removed from the controller, so its ports are gone too.
+const errDeviceNotFound int32 = -39050
+
 // Ensure the implementation satisfies the expected interfaces.
 var (
 	_ resource.Resource                = &switchPortResource{}
@@ -241,6 +245,13 @@ func (r *switchPortResource) Update(ctx context.Context, req resource.UpdateRequ
 	if !readPort(ctx, &resp.Diagnostics, r, &plan) {
 		return
 	}
+	if plan.ProfileId.IsNull() {
+		resp.Diagnostics.AddError(
+			"Error updating switch port",
+			fmt.Sprintf("Port %d was not present on switch %s after modify.", plan.Port.ValueInt32(), plan.SwitchMac.ValueString()),
+		)
+		return
+	}
 
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
@@ -280,13 +291,21 @@ func (r *switchPortResource) ImportState(ctx context.Context, req resource.Impor
 }
 
 // readPort fetches the switch overview and selects the portList entry matching
-// the model's port, refreshing the model in place. When the port is absent (the
-// switch is gone), it clears model.ProfileId so the caller can drop the resource.
+// the model's port, refreshing the model in place. When the port is absent, or
+// the switch itself is gone from the controller, it clears model.ProfileId so
+// the caller can drop the resource.
 func readPort(ctx context.Context, diags *diag.Diagnostics, r *switchPortResource, model *switchPortResourceModel) bool {
 	_, httpResp, callErr := r.client.SwitchAPI.GetSwitchInfo(ctx, r.omadacId, model.SiteId.ValueString(), model.SwitchMac.ValueString()).Execute()
 	env, ok := envelope.Decode(httpResp, callErr, diags, "reading switch port")
 	if !ok {
 		return false
+	}
+	if env.Code() == errDeviceNotFound {
+		// The switch was removed from the controller. Erroring here would fail
+		// every refresh forever; the port cannot exist without its switch, so
+		// report it gone (homelab #514).
+		model.ProfileId = types.StringNull()
+		return true
 	}
 	if env.HasError() {
 		diags.AddError(
