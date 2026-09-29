@@ -1,4 +1,4 @@
-## Unreleased
+## 0.15.0
 
 FIXES (update semantics, homelab #515):
 - `omada_ssid`: settings left unset in config keep their live values on
