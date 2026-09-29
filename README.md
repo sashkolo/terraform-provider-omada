@@ -44,6 +44,11 @@ gives the import ID format.
   switch doesn't have, a link-aggregation member, or moving a port off a trunk
   profile (where uplinks and AP ports usually sit) unless you allow it
   explicitly. A wrong port number shouldn't be able to cut off a switch.
+- **A profile in use isn't deleted.** `omada_switch_port_profile` refuses to
+  delete a profile that any switch port still uses. Destroying an
+  `omada_switch_port` doesn't change the port, so move the port to another
+  profile first, in an earlier apply or with `create_before_destroy` on the
+  profile.
 - **State follows the controller.** An object deleted outside Terraform is
   dropped from state, and one that is still there is never dropped on a
   transient error.

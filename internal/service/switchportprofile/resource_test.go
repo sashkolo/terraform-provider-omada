@@ -92,6 +92,13 @@ func TestAcc_SwitchPortProfileResource(t *testing.T) {
 		writeJSON(w, emptyResponse)
 	})
 
+	// Device list, read by Delete to check that no switch port still uses the
+	// profile: this site has no switches.
+	mux.HandleFunc("GET /openapi/v1/{omadacId}/sites/{siteId}/devices", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, `{"errorCode":0,"msg":"","result":{"totalRows":1,"currentPage":1,"currentSize":100,"data":[`+
+			`{"mac":"00-00-5E-00-53-10","name":"Gateway","type":"gateway"}]}}`)
+	})
+
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
 		Steps: []resource.TestStep{

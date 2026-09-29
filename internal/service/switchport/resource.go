@@ -73,7 +73,7 @@ func (r *switchPortResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"profile the port uses (and therefore its VLAN posture), plus the port name, PoE mode, " +
 			"and admin state. A physical port always exists, so this behaves like a singleton keyed " +
 			"by (site_id, switch_mac, port): Create/Update apply the settings via the per-port " +
-			"Modify endpoint and Delete is a no-op. Targets the Open API v1 switch surface " +
+			"Modify endpoint and Delete leaves the port on its profile (with a warning). Targets the Open API v1 switch surface " +
 			"(`GET /switches/{mac}` read, `PATCH /switches/{mac}/ports/{port}` write) implemented by " +
 			"controller firmware such as 5.15.x. The port's VLAN membership is governed by the " +
 			"referenced `omada_switch_port_profile`. Requires `Site Device Manager Modify`.",
@@ -287,8 +287,16 @@ func (r *switchPortResource) Update(ctx context.Context, req resource.UpdateRequ
 
 // Delete is a no-op: a physical switch port cannot be removed. The resource is
 // simply dropped from Terraform state; the live port keeps its last-applied
-// configuration.
-func (r *switchPortResource) Delete(_ context.Context, _ resource.DeleteRequest, _ *resource.DeleteResponse) {
+// configuration, which the warning spells out.
+func (r *switchPortResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var state switchPortResourceModel
+	if diags := req.State.Get(ctx, &state); diags.HasError() {
+		return
+	}
+	resp.Diagnostics.AddWarning("Switch port left unchanged", fmt.Sprintf(
+		"Port %d on switch %s keeps profile %q: destroying omada_switch_port only drops it from state. Move the "+
+			"port to another profile before deleting that profile.",
+		state.Port.ValueInt32(), state.SwitchMac.ValueString(), state.ProfileName.ValueString()))
 }
 
 // ImportState imports an existing switch port. The import ID is

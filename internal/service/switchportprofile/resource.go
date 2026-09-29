@@ -71,8 +71,11 @@ func (r *switchPortProfileResource) Schema(_ context.Context, _ resource.SchemaR
 			"`native_network_id` and no `tagged_network_ids` is an access/untagged port on that " +
 			"VLAN; adding tagged networks makes it a trunk. Targets the Open API v1 profile " +
 			"surface (`/openapi/v1/.../lan-profiles`) implemented by controller firmware such as " +
-			"5.15.x (the v2 surface returns 404 there). Requires one of: `Site Settings Manager " +
-			"Modify` or `Network Config Page Modify`.",
+			"5.15.x (the v2 surface returns 404 there). Deleting a profile that a switch port " +
+			"still uses is refused: move the ports first, in an earlier apply or with " +
+			"`create_before_destroy` on the profile, because Terraform deletes the profile before " +
+			"it updates the ports. Requires one of: `Site Settings Manager Modify` or `Network " +
+			"Config Page Modify`, plus `Site Device Manager View Only` to check the ports.",
 		Attributes: map[string]schema.Attribute{
 			"profile_id": schema.StringAttribute{
 				Description: "LAN-profile ID assigned by the controller. Use it (with site_id) as the import target.",
@@ -331,6 +334,10 @@ func (r *switchPortProfileResource) Delete(ctx context.Context, req resource.Del
 	diags := req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if r.refuseDeleteInUse(ctx, &resp.Diagnostics, &state) {
 		return
 	}
 

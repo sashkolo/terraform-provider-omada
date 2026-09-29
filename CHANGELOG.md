@@ -1,3 +1,17 @@
+## 0.17.0
+
+FIXES (switch-port guardrails):
+- `omada_switch_port_profile` refuses to delete a profile that a switch port
+  still uses, and names the ports. It checks every switch on the site before
+  the DELETE is sent, and refuses when the switches can't be read.
+  Destroying an `omada_switch_port` leaves the port on its profile, so
+  destroying both together used to delete a profile a live port still
+  carried. Terraform and OpenTofu delete the profile before they update the
+  ports that move off it, so moving the ports and deleting the profile takes
+  two applies, or one with `lifecycle { create_before_destroy = true }` on the
+  profile.
+- `omada_switch_port` warns on destroy that the port keeps its profile.
+
 ## 0.16.1
 
 FIXES:
@@ -6,8 +20,6 @@ FIXES:
   disabled DHCP block for such a network; an unset `dhcp_settings` now stays
   unset while DHCP is off, and DHCP turned on outside Terraform still shows as
   drift. Found by a live write proof.
-
-## Unreleased
 
 DOCS:
 - Examples, docs and test fixtures use documentation values (placeholder IDs,
