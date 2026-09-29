@@ -164,3 +164,43 @@ func TestAcc_LanNetworkUnsetInterfaceIdsRefused(t *testing.T) {
 		}
 	}
 }
+
+// A network created without dhcp_settings must not fail its read-back because
+// the controller reports a disabled DHCP block (homelab #515 write proof,
+// v0.16.0: "Provider produced inconsistent result after apply").
+func TestAcc_LanNetworkCreateWithoutDhcp(t *testing.T) {
+	f, ts := newFakeLanController(t)
+	f.dhcpDefault = true
+
+	config := ts.ProviderConfig + `
+resource "omada_lan_network" "test" {
+	site_id        = "test-site-id"
+	name           = "No DHCP"
+	vlan_id        = 215
+	gateway_subnet = "192.168.215.1/24"
+	interface_ids  = ["port-1"]
+}
+`
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check:  resource.TestCheckNoResourceAttr("omada_lan_network.test", "dhcp_settings.enable"),
+			},
+			{
+				// DHCP turned on outside Terraform is drift.
+				PreConfig: f.set(func(f *fakeLanController) {
+					for _, row := range f.rows {
+						if dhcp, ok := row["dhcpSettingsVO"].(map[string]any); ok {
+							dhcp["enable"] = true
+						}
+					}
+				}),
+				Config:             config,
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: true,
+			},
+		},
+	})
+}

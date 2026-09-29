@@ -4,6 +4,19 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
+// flattenDhcpForModel keeps an unset dhcp_settings unset while the gateway
+// serves no DHCP. The controller reports a DHCP block with enable = false for a
+// network created without one (and the UI's LAN form fills in defaults such as
+// dhcpns and leasetime), so reading that back into an unset attribute failed
+// the create with "inconsistent result after apply". Found by the homelab #515
+// write proof. DHCP turned on in the UI still shows up as drift.
+func flattenDhcpForModel(s *dhcpReadVO, prior *dhcpSettingsModel) *dhcpSettingsModel {
+	if prior == nil && (s == nil || s.Enable == nil || !*s.Enable) {
+		return nil
+	}
+	return flattenDhcpRead(s)
+}
+
 // flattenDhcpRead converts the lenient local DHCP read view into the Terraform
 // block. Returns nil when the controller reports no DHCP settings.
 func flattenDhcpRead(s *dhcpReadVO) *dhcpSettingsModel {
@@ -55,5 +68,5 @@ func flattenLanNetworkRead(m *lanNetworkResourceModel, r *lanNetworkReadRow) {
 	m.Domain = types.StringPointerValue(r.Domain)
 	m.IgmpSnoopEnable = types.BoolValue(r.IgmpSnoopEnable)
 	m.InterfaceIds = flattenInterfaceIds(r.InterfaceIds, m.InterfaceIds)
-	m.DhcpSettings = flattenDhcpRead(r.DhcpSettingsVO)
+	m.DhcpSettings = flattenDhcpForModel(r.DhcpSettingsVO, m.DhcpSettings)
 }

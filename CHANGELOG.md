@@ -1,3 +1,12 @@
+## 0.16.1
+
+FIXES:
+- `omada_lan_network`: creating a network without `dhcp_settings` no longer
+  fails with "inconsistent result after apply". The controller reports a
+  disabled DHCP block for such a network; an unset `dhcp_settings` now stays
+  unset while DHCP is off, and DHCP turned on outside Terraform still shows as
+  drift. Found by the homelab #515 write proof.
+
 ## Unreleased
 
 DOCS:
