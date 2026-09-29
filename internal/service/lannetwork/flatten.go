@@ -8,8 +8,8 @@ import (
 // serves no DHCP. The controller reports a DHCP block with enable = false for a
 // network created without one (and the UI's LAN form fills in defaults such as
 // dhcpns and leasetime), so reading that back into an unset attribute failed
-// the create with "inconsistent result after apply". Found by the homelab #515
-// write proof. DHCP turned on in the UI still shows up as drift.
+// the create with "inconsistent result after apply". Found by a live write
+// proof. DHCP turned on in the UI still shows up as drift.
 func flattenDhcpForModel(s *dhcpReadVO, prior *dhcpSettingsModel) *dhcpSettingsModel {
 	if prior == nil && (s == nil || s.Enable == nil || !*s.Enable) {
 		return nil

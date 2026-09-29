@@ -122,7 +122,7 @@ resource "omada_acl" %q {
 	status           = true
 	syslog           = false
 	source_type      = 0
-	source_ids       = ["net-outdoor"]
+	source_ids       = ["net-guest"]
 	destination_type = 0
 	destination_ids  = ["net-%s"]
 	policy           = 0
@@ -135,19 +135,20 @@ resource "omada_acl" %q {
 `, name, description, name)
 }
 
-// Removing an ACL and its id from ordered_acl_ids in one apply must work
-// (homelab #524). The order resource depends on the ACLs, so Terraform updates
-// the order before it destroys the ACL, while the ACL is still live.
+// Removing an ACL and its id from ordered_acl_ids in one apply must work. The
+// order's new configuration no longer references the removed ACL, so the engine
+// destroys the ACL first and then updates the order, whose exhaustiveness check
+// no longer sees it.
 func TestAcc_GatewayAclOrderRemovesAclInSameApply(t *testing.T) {
 	f, ts := newFakeGatewayAcls(t)
 
-	both := ts.ProviderConfig + removalAcl("probe", "Transition probe") + removalAcl("deny", "Outdoor deny") + `
+	both := ts.ProviderConfig + removalAcl("probe", "Transition probe") + removalAcl("deny", "Guest deny") + `
 resource "omada_gateway_acl_order" "test" {
 	site_id         = "test-site-id"
 	ordered_acl_ids = [omada_acl.probe.acl_id, omada_acl.deny.acl_id]
 }
 `
-	denyOnly := ts.ProviderConfig + removalAcl("deny", "Outdoor deny") + `
+	denyOnly := ts.ProviderConfig + removalAcl("deny", "Guest deny") + `
 resource "omada_gateway_acl_order" "test" {
 	site_id         = "test-site-id"
 	ordered_acl_ids = [omada_acl.deny.acl_id]
@@ -183,7 +184,7 @@ resource "omada_gateway_acl_order" "test" {
 func TestAcc_GatewayAclOrderStillRefusesUnmanagedAcl(t *testing.T) {
 	f, ts := newFakeGatewayAcls(t)
 
-	config := ts.ProviderConfig + removalAcl("deny", "Outdoor deny") + `
+	config := ts.ProviderConfig + removalAcl("deny", "Guest deny") + `
 resource "omada_gateway_acl_order" "test" {
 	site_id         = "test-site-id"
 	ordered_acl_ids = [omada_acl.deny.acl_id]
@@ -202,7 +203,7 @@ resource "omada_gateway_acl_order" "test" {
 					f.order = append([]string{"ui-rule"}, f.order...)
 				},
 				// A config change forces the order resource to apply again.
-				Config: ts.ProviderConfig + removalAcl("deny", "Outdoor deny, renamed") + `
+				Config: ts.ProviderConfig + removalAcl("deny", "Guest deny, renamed") + `
 resource "omada_gateway_acl_order" "test" {
 	site_id         = "test-site-id"
 	ordered_acl_ids = [omada_acl.deny.acl_id]
