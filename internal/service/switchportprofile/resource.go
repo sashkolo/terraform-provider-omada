@@ -7,6 +7,8 @@ import (
 	"strings"
 	"terraform-provider-omada/internal/client"
 	"terraform-provider-omada/internal/envelope"
+	"terraform-provider-omada/internal/retry"
+	"terraform-provider-omada/internal/tfstate"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -213,7 +215,9 @@ func (r *switchPortProfileResource) Create(ctx context.Context, req resource.Cre
 			plan.ProfileId = types.StringValue(*cr.Id)
 		}
 	}
-	if plan.ProfileId.IsNull() && !findProfileByName(ctx, &resp.Diagnostics, r, &plan) {
+	// profile_id is Computed, so it is Unknown (not Null) at create time. Treat
+	// both as "not yet known" so the name-based fallback runs (homelab #514).
+	if (plan.ProfileId.IsUnknown() || plan.ProfileId.IsNull()) && !awaitFindProfileByName(ctx, &resp.Diagnostics, r, &plan) {
 		resp.Diagnostics.AddError(
 			"Error creating switch port profile",
 			"Create did not return an id and the profile was not present in the site afterwards.",
@@ -221,7 +225,15 @@ func (r *switchPortProfileResource) Create(ctx context.Context, req resource.Cre
 		return
 	}
 
-	if !readProfile(ctx, &resp.Diagnostics, r, &plan) {
+	if !awaitReadProfile(ctx, &resp.Diagnostics, r, &plan) {
+		// The profile exists on the controller: keep it in state (tainted)
+		// with the id the POST returned rather than a null id (homelab #514).
+		resp.Diagnostics.Append(tfstate.SaveCreated(ctx, req.Plan, &resp.State, "profile_id", plan.ProfileId.ValueString())...)
+		resp.Diagnostics.AddError(
+			"Error creating switch port profile",
+			fmt.Sprintf("Switch port profile %s was created but could not be read back within the retry window. It is "+
+				"kept in state as tainted, so the next apply replaces it.", plan.ProfileId.ValueString()),
+		)
 		return
 	}
 
@@ -240,16 +252,17 @@ func (r *switchPortProfileResource) Read(ctx context.Context, req resource.ReadR
 		return
 	}
 
-	if !readProfile(ctx, &resp.Diagnostics, r, &state) {
+	row, found := findProfileConfirmed(ctx, &resp.Diagnostics, r, &state)
+	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	// When the profile is gone upstream, readProfile clears ProfileId; leave
-	// resp.State unset so Terraform drops it from state.
-	if state.ProfileId.IsNull() {
+	if !found {
+		// Gone upstream (confirmed by repeated misses, as the list is
+		// eventually consistent): drop it so Terraform plans a re-create.
 		resp.State.RemoveResource(ctx)
 		return
 	}
+	flattenProfileRead(&state, row)
 
 	diags = resp.State.Set(ctx, state)
 	resp.Diagnostics.Append(diags...)
@@ -284,7 +297,7 @@ func (r *switchPortProfileResource) Update(ctx context.Context, req resource.Upd
 		return
 	}
 
-	if !readProfile(ctx, &resp.Diagnostics, r, &plan) {
+	if !awaitReadProfile(ctx, &resp.Diagnostics, r, &plan) {
 		return
 	}
 
@@ -309,7 +322,13 @@ func (r *switchPortProfileResource) Delete(ctx context.Context, req resource.Del
 
 	// A "profile does not exist" code is a successful delete: the resource is
 	// already gone, which is the desired end state.
-	if env.HasError() && env.ErrorCode != nil && *env.ErrorCode != errProfileNotFound {
+	if env.HasError() && env.Code() != errProfileNotFound {
+		// Any other controller error is still success when a confirmed re-list
+		// shows the profile absent (homelab #514).
+		var listDiags diag.Diagnostics
+		if _, found := findProfileConfirmed(ctx, &listDiags, r, &state); !listDiags.HasError() && !found {
+			return
+		}
 		envelope.AddAPIError(&resp.Diagnostics, "deleting switch port profile", env.ErrorCode, env.Msg)
 		return
 	}
@@ -359,43 +378,73 @@ func fetchProfileList(ctx context.Context, diags *diag.Diagnostics, r *switchPor
 	return lr.Data
 }
 
-// findProfileByName locates the profile matching the model's name (used after
-// create when the id is not returned). Sets model.ProfileId on success; returns
-// false if not found.
-func findProfileByName(ctx context.Context, diags *diag.Diagnostics, r *switchPortProfileResource, model *switchPortProfileResourceModel) bool {
+// findProfileInList fetches the list and returns the entry matching the
+// model's profile_id (nil if not present). It does not mutate the model.
+func findProfileInList(ctx context.Context, diags *diag.Diagnostics, r *switchPortProfileResource, model *switchPortProfileResourceModel) *profileReadRow {
 	data := fetchProfileList(ctx, diags, r, model)
 	if diags.HasError() {
-		return false
+		return nil
 	}
-
+	want := model.ProfileId.ValueString()
 	for i := range data {
-		if data[i].Name == model.Name.ValueString() {
-			model.ProfileId = types.StringPointerValue(data[i].Id)
-			return true
+		if data[i].Id != nil && *data[i].Id == want {
+			return &data[i]
 		}
 	}
-
-	return false
+	return nil
 }
 
-// readProfile selects the list entry matching the model's profile_id and
-// refreshes the model in place. When the profile no longer exists, it clears
-// model.ProfileId so the caller can drop the resource from state.
-func readProfile(ctx context.Context, diags *diag.Diagnostics, r *switchPortProfileResource, model *switchPortProfileResourceModel) bool {
-	data := fetchProfileList(ctx, diags, r, model)
-	if diags.HasError() {
-		return false
-	}
+// findProfileConfirmed looks the model's profile_id up in the list. A miss is
+// re-checked a few times before it is believed, because the list is eventually
+// consistent; a found row is returned at once.
+func findProfileConfirmed(ctx context.Context, diags *diag.Diagnostics, r *switchPortProfileResource, model *switchPortProfileResourceModel) (*profileReadRow, bool) {
+	var row *profileReadRow
+	found, last := retry.Until(ctx, goneConfirmations, retry.Interval, func(d *diag.Diagnostics) bool {
+		row = findProfileInList(ctx, d, r, model)
+		// Stop on an error too: a failing list is not evidence of absence.
+		return row != nil || d.HasError()
+	})
+	diags.Append(last...)
+	return row, found && row != nil
+}
 
-	for i := range data {
-		row := &data[i]
-		if row.Id != nil && *row.Id == model.ProfileId.ValueString() {
+// goneConfirmations is how many list reads must miss a profile before Read or
+// Delete treats it as deleted.
+const goneConfirmations = 3
+
+// awaitReadProfile retries the list read until the profile is present,
+// refreshing the model in place. It never clears profile_id: Create and Update
+// already know the id (homelab #514). Only the last attempt's diagnostics are
+// kept.
+func awaitReadProfile(ctx context.Context, diags *diag.Diagnostics, r *switchPortProfileResource, model *switchPortProfileResourceModel) bool {
+	ok, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {
+		if row := findProfileInList(ctx, d, r, model); row != nil {
 			flattenProfileRead(model, row)
 			return true
 		}
-	}
+		return false
+	})
+	diags.Append(last...)
+	return ok
+}
 
-	// Not present in the list: the profile is gone upstream.
-	model.ProfileId = types.StringNull()
-	return true
+// awaitFindProfileByName retries the name-based list lookup until the profile
+// is present, setting model.ProfileId. Used after create when the create
+// response omitted the id; names are unique within a site.
+func awaitFindProfileByName(ctx context.Context, diags *diag.Diagnostics, r *switchPortProfileResource, model *switchPortProfileResourceModel) bool {
+	ok, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {
+		data := fetchProfileList(ctx, d, r, model)
+		if d.HasError() {
+			return false
+		}
+		for i := range data {
+			if data[i].Id != nil && *data[i].Id != "" && data[i].Name == model.Name.ValueString() {
+				model.ProfileId = types.StringValue(*data[i].Id)
+				return true
+			}
+		}
+		return false
+	})
+	diags.Append(last...)
+	return ok
 }

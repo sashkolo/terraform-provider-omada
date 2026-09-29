@@ -1,5 +1,33 @@
 ## Unreleased
 
+FIXES (state accuracy, homelab #514):
+- Objects deleted outside Terraform are now dropped from state, so the plan
+  shows them. `omada_acl`, `omada_lan_network`, `omada_ssid` and
+  `omada_wlan_group` kept the prior state instead, so a deleted deny rule,
+  VLAN or SSID planned as "No changes". Every Read re-checks a miss three times
+  first, because the controller's lists are eventually consistent, and a
+  failing list read is never taken as absence.
+- Deletes are idempotent and never trust a bare error code: a controller error
+  counts as "already gone" only when a confirmed re-list shows the object
+  absent. `omada_ssid` and `omada_wlan_group` used to treat the generic -1001
+  as success, dropping a live object from state when a delete was rejected.
+- An object whose create succeeded but whose read-back failed is kept in state
+  as tainted, so the next apply replaces it instead of orphaning it or failing
+  on a duplicate. This applies to every resource with a create.
+- Created ids are never lost: `omada_lan_network`, `omada_ssid`,
+  `omada_wlan_group` and `omada_switch_port_profile` tested only `IsNull` on a
+  Computed id (Unknown at create), so the name lookup never ran; the IP groups
+  and the port profile saved a null id when the read-back missed the row.
+- `omada_acl` rejects a null or unknown id in `source_ids`/`destination_ids`
+  instead of silently dropping it and sending a narrower or empty list.
+- Importing an id that doesn't exist now fails.
+- Retry loops keep only the last attempt's diagnostics, so a transient error
+  followed by success no longer fails the apply.
+- `omada_switch_port` drops the port when its switch is gone (-39050) instead of
+  failing every refresh; `omada_switch_port_profile` uses the documented
+  not-found code -33507 (was -33517); `omada_port_forwarding` paging stops after
+  100 pages.
+
 FIXES:
 - One shared envelope decoder (`internal/envelope`) replaces the 14 per-resource
   copies. A response without an `errorCode`, whatever its HTTP status, and an

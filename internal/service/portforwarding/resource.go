@@ -9,7 +9,8 @@ import (
 	"strings"
 	"terraform-provider-omada/internal/client"
 	"terraform-provider-omada/internal/envelope"
-	"time"
+	"terraform-provider-omada/internal/retry"
+	"terraform-provider-omada/internal/tfstate"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -24,6 +25,11 @@ import (
 )
 
 const listPageSize int32 = 1000
+
+// maxListPages bounds the paging loop: a controller that ignores `page` and
+// answers every request with a full page and no totalRows would otherwise be
+// paged forever (homelab #514). 100 pages is 100,000 rules, far past any site.
+const maxListPages int32 = 100
 
 var (
 	_ resource.Resource                   = &portForwardingResource{}
@@ -258,9 +264,15 @@ func (r *portForwardingResource) Create(ctx context.Context, req resource.Create
 		return
 	}
 	if !awaitRead(ctx, &resp.Diagnostics, r, &plan) {
-		if !resp.Diagnostics.HasError() {
-			resp.Diagnostics.AddError("Error creating port forwarding", "The rule was created but could not be read back within the retry window.")
-		}
+		// The rule exists on the controller and its id is known: keep it in
+		// state (tainted) rather than orphaning an open port forward, so the next
+		// apply replaces it instead of failing on a duplicate name (homelab #514).
+		resp.Diagnostics.Append(tfstate.SaveCreated(ctx, req.Plan, &resp.State, "port_forwarding_id", plan.PortForwardingId.ValueString())...)
+		resp.Diagnostics.AddError(
+			"Error creating port forwarding",
+			fmt.Sprintf("Port forwarding %s was created but could not be read back within the retry window. It is kept "+
+				"in state as tainted, so the next apply replaces it.", plan.PortForwardingId.ValueString()),
+		)
 		return
 	}
 
@@ -274,11 +286,11 @@ func (r *portForwardingResource) Read(ctx context.Context, req resource.ReadRequ
 		return
 	}
 
-	row := findByID(ctx, &resp.Diagnostics, r, &state)
+	row, found := findByIDConfirmed(ctx, &resp.Diagnostics, r, &state)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if row == nil {
+	if !found {
 		resp.State.RemoveResource(ctx)
 		return
 	}
@@ -335,7 +347,14 @@ func (r *portForwardingResource) Delete(ctx context.Context, req resource.Delete
 	if !ok {
 		return
 	}
+	// A rejected delete of a rule that is already gone is the desired end
+	// state. The not-found code isn't documented for this endpoint, so confirm
+	// against the list instead of trusting a code (homelab #514).
 	if env.HasError() {
+		var listDiags diag.Diagnostics
+		if _, found := findByIDConfirmed(ctx, &listDiags, r, &state); !listDiags.HasError() && !found {
+			return
+		}
 		envelope.AddAPIError(&resp.Diagnostics, "deleting port forwarding", env.ErrorCode, env.Msg)
 	}
 }
@@ -352,7 +371,7 @@ func (r *portForwardingResource) ImportState(ctx context.Context, req resource.I
 
 func fetchList(ctx context.Context, diags *diag.Diagnostics, r *portForwardingResource, model *portForwardingResourceModel) []portForwardingReadRow {
 	rows := make([]portForwardingReadRow, 0)
-	for page := int32(1); ; page++ {
+	for page := int32(1); page <= maxListPages; page++ {
 		_, httpResp, callErr := r.client.NATAPI.GetPortForwardingList(ctx, r.omadacId, model.SiteId.ValueString()).
 			Page(page).PageSize(listPageSize).Execute()
 		env, ok := envelope.Decode(httpResp, callErr, diags, "reading port forwarding")
@@ -373,6 +392,10 @@ func fetchList(ctx context.Context, diags *diag.Diagnostics, r *portForwardingRe
 			return rows
 		}
 	}
+	diags.AddError("Error reading port forwarding",
+		fmt.Sprintf("The port-forwarding list did not end within %d pages of %d rows; the controller may be ignoring "+
+			"the page parameter.", maxListPages, listPageSize))
+	return nil
 }
 
 // listComplete determines whether a paged list has been exhausted. Some
@@ -396,10 +419,32 @@ func findByID(ctx context.Context, diags *diag.Diagnostics, r *portForwardingRes
 	return nil
 }
 
+// findByIDConfirmed looks the model's id up in the list. A miss is re-checked
+// a few times before it is believed, because the list is eventually
+// consistent; a found row is returned at once.
+func findByIDConfirmed(ctx context.Context, diags *diag.Diagnostics, r *portForwardingResource, model *portForwardingResourceModel) (*portForwardingReadRow, bool) {
+	var row *portForwardingReadRow
+	found, last := retry.Until(ctx, goneConfirmations, retry.Interval, func(d *diag.Diagnostics) bool {
+		row = findByID(ctx, d, r, model)
+		// Stop on an error too: a failing list is not evidence of absence.
+		return row != nil || d.HasError()
+	})
+	diags.Append(last...)
+	return row, found && row != nil
+}
+
+// goneConfirmations is how many list reads must miss a rule before Read or
+// Delete treats it as deleted.
+const goneConfirmations = 3
+
+// awaitFindByName retries the name-based list lookup until the rule is present,
+// setting model.PortForwardingId. Only the last attempt's diagnostics are kept,
+// except that an ambiguous name stops the retries at once.
 func awaitFindByName(ctx context.Context, diags *diag.Diagnostics, r *portForwardingResource, model *portForwardingResourceModel) bool {
-	return retry(ctx, diags, func() bool {
-		rows := fetchList(ctx, diags, r, model)
-		if diags.HasError() {
+	found := false
+	_, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {
+		rows := fetchList(ctx, d, r, model)
+		if d.HasError() {
 			return false
 		}
 		var match *portForwardingReadRow
@@ -408,8 +453,8 @@ func awaitFindByName(ctx context.Context, diags *diag.Diagnostics, r *portForwar
 				continue
 			}
 			if match != nil {
-				diags.AddError("Ambiguous port-forwarding name", fmt.Sprintf("More than one rule named %q exists in site %s; the create id cannot be recovered safely.", model.Name.ValueString(), model.SiteId.ValueString()))
-				return false
+				d.AddError("Ambiguous port-forwarding name", fmt.Sprintf("More than one rule named %q exists in site %s; the create id cannot be recovered safely.", model.Name.ValueString(), model.SiteId.ValueString()))
+				return true // permanent: retrying cannot resolve it
 			}
 			match = &rows[index]
 		}
@@ -417,46 +462,34 @@ func awaitFindByName(ctx context.Context, diags *diag.Diagnostics, r *portForwar
 			return false
 		}
 		model.PortForwardingId = types.StringValue(*match.Id)
+		found = true
 		return true
 	})
+	diags.Append(last...)
+	return found
 }
 
+// awaitRead retries the list read until the rule is present and reflects the
+// model, refreshing the model in place. It never clears the id. Only the last
+// attempt's diagnostics are kept, except that a DMZ row stops the retries.
 func awaitRead(ctx context.Context, diags *diag.Diagnostics, r *portForwardingResource, model *portForwardingResourceModel) bool {
-	return retry(ctx, diags, func() bool {
-		row := findByID(ctx, diags, r, model)
+	found := false
+	_, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {
+		row := findByID(ctx, d, r, model)
 		if row == nil {
 			return false
 		}
 		if row.DMZ {
-			diags.AddError("Unsupported DMZ rule", "The controller returned the managed rule with DMZ enabled; refusing to represent an all-ports exposure as omada_port_forwarding.")
-			return false
+			d.AddError("Unsupported DMZ rule", "The controller returned the managed rule with DMZ enabled; refusing to represent an all-ports exposure as omada_port_forwarding.")
+			return true // permanent: retrying cannot resolve it
 		}
 		if !rowMatchesModel(row, model) {
 			return false
 		}
 		flattenPortForwarding(model, row)
+		found = true
 		return true
 	})
-}
-
-func retry(ctx context.Context, diags *diag.Diagnostics, action func() bool) bool {
-	const attempts = 10
-	const interval = 500 * time.Millisecond
-	for attempt := 0; attempt < attempts; attempt++ {
-		if action() {
-			return true
-		}
-		if diags.HasError() {
-			return false
-		}
-		if attempt == attempts-1 {
-			break
-		}
-		select {
-		case <-time.After(interval):
-		case <-ctx.Done():
-			return false
-		}
-	}
-	return false
+	diags.Append(last...)
+	return found
 }

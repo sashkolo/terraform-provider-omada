@@ -55,3 +55,10 @@ type ssidListRow struct {
 type ssidListResult struct {
 	Data []ssidListRow `json:"data"`
 }
+
+// wlanGroupRow is one entry of the site's WLAN-group list, used to tell an
+// SSID list rejected because its group is gone from one rejected for another
+// reason.
+type wlanGroupRow struct {
+	WlanId *string `json:"wlanId"`
+}

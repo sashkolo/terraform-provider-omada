@@ -7,7 +7,8 @@ import (
 	"strings"
 	"terraform-provider-omada/internal/client"
 	"terraform-provider-omada/internal/envelope"
-	"time"
+	"terraform-provider-omada/internal/retry"
+	"terraform-provider-omada/internal/tfstate"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -135,7 +136,10 @@ func (r *wlanGroupResource) Create(ctx context.Context, req resource.CreateReque
 			}
 		}
 	}
-	if plan.WlanId.IsNull() && !awaitFindWlanGroupByName(ctx, &resp.Diagnostics, r, &plan) {
+
+	// wlan_group_id is Computed, so it is Unknown (not Null) at create time;
+	// testing only IsNull skipped the name lookup and read back an empty id.
+	if (plan.WlanId.IsUnknown() || plan.WlanId.IsNull()) && !awaitFindWlanGroupByName(ctx, &resp.Diagnostics, r, &plan) {
 		resp.Diagnostics.AddError(
 			"Error creating WLAN group",
 			"Create did not return an id and the group was not present in the site afterwards.",
@@ -144,9 +148,14 @@ func (r *wlanGroupResource) Create(ctx context.Context, req resource.CreateReque
 	}
 
 	if !awaitReadWlanGroup(ctx, &resp.Diagnostics, r, &plan) {
+		// The group exists on the controller: keep it in state (tainted) rather
+		// than orphaning it, so a re-apply replaces it instead of failing on a
+		// duplicate name (homelab #514).
+		resp.Diagnostics.Append(tfstate.SaveCreated(ctx, req.Plan, &resp.State, "wlan_group_id", plan.WlanId.ValueString())...)
 		resp.Diagnostics.AddError(
 			"Error creating WLAN group",
-			"The group was created but could not be read back within the retry window.",
+			fmt.Sprintf("WLAN group %s was created but could not be read back within the retry window. It is kept "+
+				"in state as tainted, so the next apply replaces it.", plan.WlanId.ValueString()),
 		)
 		return
 	}
@@ -166,13 +175,18 @@ func (r *wlanGroupResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 
-	readWlanGroup(ctx, &resp.Diagnostics, r, &state)
-
-	// When the group is gone upstream, readWlanGroup clears WlanId; leave
-	// resp.State unset so Terraform drops it from state.
-	if state.WlanId.IsNull() {
+	row, found := findWlanGroupConfirmed(ctx, &resp.Diagnostics, r, &state)
+	if resp.Diagnostics.HasError() {
 		return
 	}
+	if !found {
+		// Deleted outside Terraform. Setting nothing would keep the prior state,
+		// which the framework pre-fills, so the group would silently stay
+		// "managed" (homelab #514).
+		resp.State.RemoveResource(ctx)
+		return
+	}
+	flattenWlanGroupRead(&state, row)
 
 	diags = resp.State.Set(ctx, state)
 	resp.Diagnostics.Append(diags...)
@@ -208,7 +222,11 @@ func (r *wlanGroupResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
-	if !readWlanGroup(ctx, &resp.Diagnostics, r, &plan) {
+	if !awaitReadWlanGroup(ctx, &resp.Diagnostics, r, &plan) {
+		resp.Diagnostics.AddError(
+			"Error updating WLAN group",
+			fmt.Sprintf("WLAN group %s was updated but could not be read back within the retry window.", plan.WlanId.ValueString()),
+		)
 		return
 	}
 
@@ -231,9 +249,15 @@ func (r *wlanGroupResource) Delete(ctx context.Context, req resource.DeleteReque
 		return
 	}
 
-	// -1001 (invalid request parameters) is returned when the group no longer
-	// exists on 5.15.x; that is the desired end state for a delete.
-	if env.HasError() && env.ErrorCode != nil && *env.ErrorCode != errNotFound {
+	// A rejected delete of a group that is already gone is the desired end
+	// state. The controller answers a missing group with -1001, which is also
+	// its generic "invalid request parameters", so a code alone once dropped a
+	// live group from state; confirm against the list instead (homelab #514).
+	if env.HasError() {
+		var listDiags diag.Diagnostics
+		if _, found := findWlanGroupConfirmed(ctx, &listDiags, r, &state); !listDiags.HasError() && !found {
+			return
+		}
 		envelope.AddAPIError(&resp.Diagnostics, "deleting WLAN group", env.ErrorCode, env.Msg)
 		return
 	}
@@ -282,6 +306,40 @@ func fetchWlanGroupList(ctx context.Context, diags *diag.Diagnostics, r *wlanGro
 	return rows
 }
 
+// findWlanGroupInList fetches the group list and returns the entry matching
+// the model's wlan_group_id (nil if not present). It does not mutate the model.
+func findWlanGroupInList(ctx context.Context, diags *diag.Diagnostics, r *wlanGroupResource, model *wlanGroupResourceModel) *wlanGroupReadRow {
+	rows := fetchWlanGroupList(ctx, diags, r, model)
+	if diags.HasError() {
+		return nil
+	}
+	want := model.WlanId.ValueString()
+	for i := range rows {
+		if rows[i].WlanId != nil && *rows[i].WlanId == want {
+			return &rows[i]
+		}
+	}
+	return nil
+}
+
+// findWlanGroupConfirmed looks the model's wlan_group_id up in the list. A
+// miss is re-checked a few times before it is believed, because the list is
+// eventually consistent; a found row is returned at once.
+func findWlanGroupConfirmed(ctx context.Context, diags *diag.Diagnostics, r *wlanGroupResource, model *wlanGroupResourceModel) (*wlanGroupReadRow, bool) {
+	var row *wlanGroupReadRow
+	found, last := retry.Until(ctx, goneConfirmations, retry.Interval, func(d *diag.Diagnostics) bool {
+		row = findWlanGroupInList(ctx, d, r, model)
+		// Stop on an error too: a failing list is not evidence of absence.
+		return row != nil || d.HasError()
+	})
+	diags.Append(last...)
+	return row, found && row != nil
+}
+
+// goneConfirmations is how many list reads must miss a group before Read or
+// Delete treats it as deleted.
+const goneConfirmations = 3
+
 // findWlanGroupByName locates the group matching the model's name (used after
 // create when the id is not returned). Sets model.WlanId on success; returns
 // false if not found.
@@ -303,74 +361,31 @@ func findWlanGroupByName(ctx context.Context, diags *diag.Diagnostics, r *wlanGr
 
 // awaitFindWlanGroupByName retries findWlanGroupByName briefly. The
 // controller's WLAN-group list is eventually consistent right after create, so
-// a single immediate read can miss a group that was just created.
+// a single immediate read can miss a group that was just created. Only the
+// last attempt's diagnostics are kept, so a transient error doesn't fail the
+// apply.
 func awaitFindWlanGroupByName(ctx context.Context, diags *diag.Diagnostics, r *wlanGroupResource, model *wlanGroupResourceModel) bool {
-	return runWithBackoff(ctx, func() bool {
-		return findWlanGroupByName(ctx, diags, r, model)
+	ok, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {
+		return findWlanGroupByName(ctx, d, r, model)
 	})
+	diags.Append(last...)
+	return ok
 }
 
-// readWlanGroup selects the list entry matching the model's wlan_group_id and
-// refreshes the model in place. When the group no longer exists, it clears
-// model.WlanId so the caller can drop the resource from state.
-func readWlanGroup(ctx context.Context, diags *diag.Diagnostics, r *wlanGroupResource, model *wlanGroupResourceModel) bool {
-	rows := fetchWlanGroupList(ctx, diags, r, model)
-	if diags.HasError() {
-		return false
-	}
-
-	for i := range rows {
-		if rows[i].WlanId != nil && *rows[i].WlanId == model.WlanId.ValueString() {
-			flattenWlanGroupRead(model, &rows[i])
-			return true
-		}
-	}
-
-	// Not present in the list: the group is gone upstream.
-	model.WlanId = types.StringNull()
-	return true
-}
-
-// awaitReadWlanGroup retries the list-based read briefly after create so the
-// just-created group is reflected despite propagation lag. Unlike readWlanGroup
-// it never clears the id (the group is known to exist; it just has not appeared
-// in the list yet). Returns false only if it never becomes visible.
+// awaitReadWlanGroup retries the list read until the group is present,
+// refreshing the model in place. The list is eventually consistent, so a
+// freshly created or renamed group may take a moment to appear. It never
+// clears wlan_group_id: the caller (Create/Update) already knows the id. Only
+// the last attempt's diagnostics are kept, so a transient error doesn't fail
+// the apply.
 func awaitReadWlanGroup(ctx context.Context, diags *diag.Diagnostics, r *wlanGroupResource, model *wlanGroupResourceModel) bool {
-	return runWithBackoff(ctx, func() bool {
-		rows := fetchWlanGroupList(ctx, diags, r, model)
-		if diags.HasError() {
-			return false
-		}
-		for i := range rows {
-			if rows[i].WlanId != nil && *rows[i].WlanId == model.WlanId.ValueString() {
-				flattenWlanGroupRead(model, &rows[i])
-				return true
-			}
+	ok, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {
+		if row := findWlanGroupInList(ctx, d, r, model); row != nil {
+			flattenWlanGroupRead(model, row)
+			return true
 		}
 		return false
 	})
-}
-
-// readAttempts/readInterval bound the post-create read retry. The controller is
-// expected to reflect a create within a few seconds; this is a safety margin,
-// not a long poll.
-const (
-	readAttempts = 10
-	readInterval = 750 * time.Millisecond
-)
-
-// runWithBackoff repeats fn until it returns true or the attempt budget is
-// exhausted. It honors context cancellation between attempts.
-func runWithBackoff(ctx context.Context, fn func() bool) bool {
-	for attempt := 0; attempt < readAttempts; attempt++ {
-		if fn() {
-			return true
-		}
-		select {
-		case <-time.After(readInterval):
-		case <-ctx.Done():
-			return false
-		}
-	}
-	return false
+	diags.Append(last...)
+	return ok
 }

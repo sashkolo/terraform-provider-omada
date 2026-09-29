@@ -8,9 +8,11 @@ import (
 )
 
 const (
-	// errProfileNotFound is the Omada Open API error code for a missing LAN
-	// profile. Read/Delete use it to detect remote deletion.
-	errProfileNotFound int32 = -33517
+	// errProfileNotFound is the Open API's "This profile does not exist" code
+	// (DeleteLanProfile/ModifyLanProfile in the SDK docs). Delete treats it as
+	// success. It was -33517, a code the API does not document, so deleting an
+	// already-gone profile failed (homelab #514).
+	errProfileNotFound int32 = -33507
 
 	// Controller defaults applied when the corresponding optional attribute is
 	// left unset on create. They mirror the values a freshly-created LAN profile
