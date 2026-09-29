@@ -43,6 +43,7 @@ type fakeSsidController struct {
 	omitCreateID   bool // the create result carries no id
 	badGateways    int  // the next detail reads answer a gateway error page
 	posts          int
+	lastPatch      map[string]any // the body of the most recent update
 }
 
 func newFakeSsidController(t *testing.T) (*fakeSsidController, *acctest.TestServer) {
@@ -124,6 +125,7 @@ func newFakeSsidController(t *testing.T) (*fakeSsidController, *acctest.TestServ
 			write(w, invalid)
 			return
 		}
+		f.lastPatch = body
 		for k, v := range body {
 			row[k] = v
 		}

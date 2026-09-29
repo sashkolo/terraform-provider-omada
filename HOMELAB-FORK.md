@@ -20,6 +20,9 @@ checksum-verified filesystem mirror.
   `omada_dhcp_reservation` (v0.11.0, homelab #154),
   `omada_ap_wlan_group` (v0.13.0, homelab #157),
   `omada_port_forwarding` (v0.14.0, homelab #80/#199).
+- **Hardening (v0.15.0, homelab #511):** one strict envelope decoder (#235),
+  state accuracy (#514), updates that keep live settings (#515), current
+  dependencies with govulncheck and OpenTofu in CI (#513). See `CHANGELOG.md`.
 - **Decision + consumption model:** documented in the homelab repo at
   `docs/network/OMADA-TERRAFORM.md`.
 - **Upstreaming:** changes here that are not homelab-specific should be offered

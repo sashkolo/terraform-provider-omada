@@ -42,6 +42,9 @@ type ssidDetailReadVO struct {
 	HidePwd        *bool      `json:"hidePwd"`
 	DeviceType     *int32     `json:"deviceType"`
 	PskSetting     *pskReadVO `json:"pskSetting"`
+	// AutoWanAccess is not modeled; Update sends the live value back so an edit
+	// can't change it (homelab #515).
+	AutoWanAccess *bool `json:"autoWanAccess"`
 }
 
 // ssidListRow is one entry of the paged SSID list (GET .../ssids), used to
