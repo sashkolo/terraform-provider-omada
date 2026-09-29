@@ -43,6 +43,8 @@ resource "omada_switch_port" "outdoor" {
 
 ### Optional
 
+- `allow_lag_member` (Boolean) Allow writing a port that is a link-aggregation member; the write takes it out of its LAG. Defaults to `false`.
+- `allow_trunk_reassign` (Boolean) Allow moving the port off a trunk profile (the "All" type, or any profile with tagged networks). Without it such a write is refused, because uplinks and AP trunks sit on those profiles. Defaults to `false`.
 - `disabled` (Boolean) Whether the port is administratively disabled. Defaults to `false` (enabled).
 - `name` (String) Port name/description.
 - `poe` (Number) PoE mode: `0` off, `1` on (802.3at/af), `2` do-not-modify.

@@ -92,6 +92,14 @@ func TestAcc_SwitchPortResource(t *testing.T) {
 		writeJSON(w, switchResponse())
 	})
 
+	// LAN profiles, read by the write guard when the port changes profile. Both
+	// are access profiles (type 2, nothing tagged), so the move is allowed.
+	mux.HandleFunc("GET /openapi/v1/{omadacId}/sites/{siteId}/lan-profiles", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, `{"errorCode":0,"msg":"","result":{"totalRows":2,"currentPage":1,"currentSize":1000,"data":[`+
+			`{"id":"test-profile-id","name":"Outdoor","type":2,"tagNetworkIds":[]},`+
+			`{"id":"test-profile-id-2","name":"Outdoor 2","type":2,"tagNetworkIds":[]}]}}`)
+	})
+
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
 		Steps: []resource.TestStep{

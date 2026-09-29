@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -146,12 +147,30 @@ func (r *switchPortResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Description: "Read-only: whether this port participates in a link-aggregation group.",
 				Computed:    true,
 			},
+			"allow_trunk_reassign": schema.BoolAttribute{
+				Description: "Allow moving the port off a trunk profile (the \"All\" type, or any profile with " +
+					"tagged networks). Without it such a write is refused, because uplinks and AP trunks sit " +
+					"on those profiles. Defaults to `false`.",
+				Optional: true,
+				Computed: true,
+				Default:  booldefault.StaticBool(false),
+			},
+			"allow_lag_member": schema.BoolAttribute{
+				Description: "Allow writing a port that is a link-aggregation member; the write takes it out of " +
+					"its LAG. Defaults to `false`.",
+				Optional: true,
+				Computed: true,
+				Default:  booldefault.StaticBool(false),
+			},
 		},
 	}
 }
 
 // modifyPort applies the plan to the live port via the per-port Modify endpoint.
 func (r *switchPortResource) modifyPort(ctx context.Context, diags *diag.Diagnostics, plan switchPortResourceModel, action string) bool {
+	if !r.guardPortWrite(ctx, diags, plan, action) {
+		return false
+	}
 	port := strconv.FormatInt(int64(plan.Port.ValueInt32()), 10)
 	_, httpResp, callErr := r.client.SwitchAPI.ModifySwitchPort(ctx, r.omadacId, plan.SiteId.ValueString(), plan.SwitchMac.ValueString(), port).
 		OswPortSettingVO(expandPort(plan)).Execute()
@@ -213,6 +232,15 @@ func (r *switchPortResource) Read(ctx context.Context, req resource.ReadRequest,
 	if state.ProfileId.IsNull() {
 		resp.State.RemoveResource(ctx)
 		return
+	}
+
+	// State written by 0.15.0 or earlier has no guard switches; default them
+	// here so upgrading plans a no-op instead of a write to the port.
+	if state.AllowTrunkReassign.IsNull() {
+		state.AllowTrunkReassign = types.BoolValue(false)
+	}
+	if state.AllowLagMember.IsNull() {
+		state.AllowLagMember = types.BoolValue(false)
 	}
 
 	diags = resp.State.Set(ctx, state)
@@ -288,6 +316,10 @@ func (r *switchPortResource) ImportState(ctx context.Context, req resource.Impor
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("site_id"), idParts[0])...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("switch_mac"), idParts[1])...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("port"), int32(portNum))...)
+	// The guard switches are config-only; an import starts from their defaults
+	// so it plans to a no-op.
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("allow_trunk_reassign"), false)...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("allow_lag_member"), false)...)
 }
 
 // readPort fetches the switch overview and selects the portList entry matching

@@ -39,4 +39,6 @@ type switchPortResourceModel struct {
 	Poe                   types.Int32  `tfsdk:"poe"`
 	Disabled              types.Bool   `tfsdk:"disabled"`
 	LagPort               types.Bool   `tfsdk:"lag_port"`
+	AllowTrunkReassign    types.Bool   `tfsdk:"allow_trunk_reassign"`
+	AllowLagMember        types.Bool   `tfsdk:"allow_lag_member"`
 }

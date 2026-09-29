@@ -1,3 +1,15 @@
+## Unreleased
+
+FIXES (switch-port guardrails, homelab #517):
+- `omada_switch_port` checks the switch before writing and refuses:
+  - a port the switch doesn't have (a typo in `port`);
+  - a link-aggregation member, whose write would take it out of its LAG,
+    unless `allow_lag_member = true`;
+  - moving a port off a trunk profile (the "All" type, or any profile with
+    tagged networks) unless `allow_trunk_reassign = true`. Uplinks and AP
+    trunks sit on such profiles, and the Open API reports no uplink port, so
+    the guard judges by what the port carries now.
+
 ## 0.15.0
 
 FEATURES (client, homelab #516):
