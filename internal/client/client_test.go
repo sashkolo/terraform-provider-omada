@@ -10,13 +10,17 @@ import (
 )
 
 func TestNew_Success(t *testing.T) {
-	var receivedGrant, receivedClientId string
+	var receivedGrant, receivedClientId, receivedAuth string
 	accessToken := "mock-access-token"
 	controllerId := "mock-controller-id"
 	clientId := "mock-client-id"
 	clientSecret := "mock-client-secret"
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/probe" {
+			receivedAuth = r.Header.Get("Authorization")
+			return
+		}
 		receivedGrant = r.URL.Query().Get("grant_type")
 
 		var body struct {
@@ -59,10 +63,15 @@ func TestNew_Success(t *testing.T) {
 		t.Errorf("Client ID: %q", receivedClientId)
 	}
 
-	receivedToken := meta.Client.GetConfig().DefaultHeader["Authorization"]
-
-	if receivedToken != fmt.Sprintf("AccessToken=%s", accessToken) {
-		t.Errorf("Received Token: %q", receivedToken)
+	// The token is added per request by the client's transport.
+	req, _ := http.NewRequest(http.MethodGet, server.URL+"/probe", nil)
+	resp, err := meta.Client.GetConfig().HTTPClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if receivedAuth != fmt.Sprintf("AccessToken=%s", accessToken) {
+		t.Errorf("Received Token: %q", receivedAuth)
 	}
 }
 
@@ -94,7 +103,8 @@ func TestNew_AuthFailure(t *testing.T) {
 		t.Fatal("No error returned")
 	}
 
-	if err.Error() != "400 Bad Request" {
+	// The controller's own reason is surfaced, not only the HTTP status.
+	if err.Error() != "the controller refused the access token request, error code -1001: Could not get access token" {
 		t.Errorf("Received Error: %s", err.Error())
 	}
 }

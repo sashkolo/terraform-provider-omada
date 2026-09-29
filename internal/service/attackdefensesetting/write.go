@@ -141,9 +141,10 @@ func modifyAttackDefenseSetting(ctx context.Context, r *attackDefenseSettingReso
 		diags.AddError("Error "+action, "Could not build request: "+err.Error())
 		return false
 	}
-	// Carry every default header the SDK/provider configured (auth token, and
-	// any others), then set the request-specific content type. Explicit sets
-	// win over the copied defaults.
+	// Carry every default header the SDK/provider configured, then set the
+	// request-specific content type. The access token is not among them: the
+	// client's transport adds (and renews) it on every request, this one
+	// included, because it goes through cfg.HTTPClient.
 	for k, v := range cfg.DefaultHeader {
 		req.Header.Set(k, v)
 	}
