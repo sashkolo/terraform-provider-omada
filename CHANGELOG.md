@@ -12,6 +12,20 @@ FIXES:
   provider with a nil dereference; it is now reported as an error (homelab
   #235).
 
+SECURITY:
+- Bump every module to its current release and the `go` directive to 1.26.8.
+  `govulncheck` on 0.14.0 reported 12 reachable vulnerabilities (grpc, x/net,
+  x/text, and the Go 1.25.8 standard library the release was built with); it
+  now reports none. grpc is held at 1.83.2 because 1.84.0 is affected by
+  GO-2026-6443 and has no patched release (homelab #513).
+
+CI:
+- New `govulncheck` job (pinned), a pinned golangci-lint, and the acceptance
+  suite also runs against OpenTofu, which is what the homelab uses (homelab
+  #513).
+
+## 0.14.0
+
 FEATURES:
 - Added `omada_port_forwarding`, a full CRUD/import resource for explicit
   gateway TCP/UDP port and port-range mappings. It supports physical/virtual WAN
