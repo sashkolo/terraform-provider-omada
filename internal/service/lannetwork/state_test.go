@@ -28,9 +28,12 @@ type fakeLanController struct {
 	// noIdOnCreate answers the POST with an empty envelope, as the live
 	// controller does, so the resource must find the network by name.
 	noIdOnCreate bool
-	posts        int
-	patches      int
-	lastPatch    map[string]any // the body of the most recent update
+	// dhcpDefault makes a create without DHCP settings read back the way the
+	// controller reports it: dhcpSettingsVO {enable: false, ...defaults}.
+	dhcpDefault bool
+	posts       int
+	patches     int
+	lastPatch   map[string]any // the body of the most recent update
 }
 
 func newFakeLanController(t *testing.T) (*fakeLanController, *acctest.TestServer) {
@@ -50,6 +53,9 @@ func newFakeLanController(t *testing.T) (*fakeLanController, *acctest.TestServer
 		f.posts++
 		id := fmt.Sprintf("net-%d", f.posts)
 		body["id"] = id
+		if _, ok := body["dhcpSettingsVO"]; !ok && f.dhcpDefault {
+			body["dhcpSettingsVO"] = map[string]any{"enable": false, "dhcpns": "auto", "leasetime": 120, "options": []any{}}
+		}
 		f.rows[id] = body
 		if f.noIdOnCreate {
 			write(w, map[string]any{"errorCode": 0, "msg": "Success."})
