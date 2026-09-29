@@ -161,7 +161,12 @@ func (r *gatewayAclOrderResource) ImportState(ctx context.Context, req resource.
 }
 
 // applyOrder validates that the planned ordered_acl_ids is exhaustive against the
-// live gateway ACL set, then reorders via ModifyAclIndex(type="gateway"). On
+// live gateway ACL set, then reorders via ModifyAclIndex(type="gateway").
+//
+// Retiring an ACL (removing its omada_acl and its id here in one apply) passes
+// this check: the order's new configuration no longer references that ACL, so
+// Terraform and OpenTofu destroy it before updating the order
+// (TestAcc_GatewayAclOrderRemovesAclInSameApply, homelab #524). On
 // success the planned order is authoritative (the reorder was accepted), so the
 // caller records plan into state directly.
 func (r *gatewayAclOrderResource) applyOrder(ctx context.Context, diags *diag.Diagnostics, plan *gatewayAclOrderResourceModel) bool {
