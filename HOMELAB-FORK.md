@@ -18,11 +18,27 @@ checksum-verified filesystem mirror.
   `omada_ip_group` + `omada_ip_port_group` (v0.9.0, homelab #155),
   `omada_gateway_acl_order` (v0.10.0, homelab #156),
   `omada_dhcp_reservation` (v0.11.0, homelab #154),
-  `omada_ap_wlan_group` (v0.13.0, homelab #157).
+  `omada_ap_wlan_group` (v0.13.0, homelab #157),
+  `omada_port_forwarding` (v0.14.0, homelab #80/#199).
 - **Decision + consumption model:** documented in the homelab repo at
   `docs/network/OMADA-TERRAFORM.md`.
 - **Upstreaming:** changes here that are not homelab-specific should be offered
   back to upstream (MIT).
+
+## Repository settings (operator)
+
+Forks start with Dependabot version updates off, and this fork's dependencies
+did not move between June and September 2026 as a result (homelab #513). These
+are repository settings, applied by the operator, not by an agent:
+
+- **Dependabot version updates:** Settings → Code security → Dependabot version
+  updates → Enable (the config is `.github/dependabot.yml`). Also enable
+  Dependabot alerts and security updates.
+- **`main` ruleset:** require a pull request, require the `Build`, `govulncheck`
+  and acceptance-test checks, and block force pushes and deletion.
+
+Releases are unsigned on purpose: the homelab pins each release's `SHA256SUMS`
+digest in `utilities/omada/omadactl`, which is the trust root.
 
 Upstream `README.md` documents the provider itself; this file only records the
 fork relationship.
