@@ -23,6 +23,9 @@ checksum-verified filesystem mirror.
 - **Hardening (v0.15.0, homelab #511):** one strict envelope decoder (#235),
   state accuracy (#514), updates that keep live settings (#515), current
   dependencies with govulncheck and OpenTofu in CI (#513). See `CHANGELOG.md`.
+- **Switch-port guardrails (v0.16.0, homelab #517):** port writes are refused
+  for unknown ports, LAG members and ports leaving a trunk profile unless
+  explicitly allowed.
 - **Decision + consumption model:** documented in the homelab repo at
   `docs/network/OMADA-TERRAFORM.md`.
 - **Upstreaming:** changes here that are not homelab-specific should be offered

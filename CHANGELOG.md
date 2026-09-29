@@ -1,4 +1,4 @@
-## Unreleased
+## 0.16.0
 
 FIXES (switch-port guardrails, homelab #517):
 - `omada_switch_port` checks the switch before writing and refuses:
