@@ -166,7 +166,7 @@ func TestAcc_LanNetworkUnsetInterfaceIdsRefused(t *testing.T) {
 }
 
 // A network created without dhcp_settings must not fail its read-back because
-// the controller reports a disabled DHCP block (homelab #515 write proof,
+// the controller reports a disabled DHCP block (live write proof,
 // v0.16.0: "Provider produced inconsistent result after apply").
 func TestAcc_LanNetworkCreateWithoutDhcp(t *testing.T) {
 	f, ts := newFakeLanController(t)
