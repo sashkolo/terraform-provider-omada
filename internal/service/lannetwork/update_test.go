@@ -51,7 +51,9 @@ func TestAcc_LanNetworkUpdateKeepsUnsetLiveSettings(t *testing.T) {
 						row["igmpSnoopEnable"] = true
 						row["mldSnoopEnable"] = true
 						row["isolation"] = true
-						row["dhcpSettingsVO"].(map[string]any)["option66"] = "10.0.0.5"
+						if dhcp, ok := row["dhcpSettingsVO"].(map[string]any); ok {
+							dhcp["option66"] = "10.0.0.5"
+						}
 					}
 				}),
 				Config: ts.ProviderConfig + updateTestLanNetwork("Outdoor renamed", 40, true),

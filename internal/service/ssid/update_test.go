@@ -41,8 +41,9 @@ resource "omada_ssid" "test" {
 						row["enable11r"] = true
 						row["mloEnable"] = true
 						row["autoWanAccess"] = true
-						psk := row["pskSetting"].(map[string]any)
-						psk["gikRekeyPskEnable"] = true
+						if psk, ok := row["pskSetting"].(map[string]any); ok {
+							psk["gikRekeyPskEnable"] = true
+						}
 					}
 				}),
 				Config: renamed,

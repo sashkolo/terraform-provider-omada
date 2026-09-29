@@ -1,5 +1,29 @@
 ## Unreleased
 
+FIXES (update semantics, homelab #515):
+- `omada_ssid`: settings left unset in config keep their live values on
+  update. They were unknown on update and sent as hard-coded defaults, so a
+  rename or PSK rotation switched 802.11r, MLO, hide-password and group-key
+  rekey off. The update also sends the live `autoWanAccess` back.
+  `device_type`, which the update endpoint can't change, now forces
+  replacement instead of failing after apply; `vlan_id` is Optional+Computed.
+- `omada_lan_network`: `igmp_snoop_enable` keeps its live value when unset (it
+  was sent as false). Updates are read-modify-write: L2 relay, isolation, MLD
+  snooping, all-LAN, application and DHCP next-server/options 60/66/138 are
+  sent with their live values, and the update is refused, before anything is
+  written, when DHCP guard, DHCPv6 guard, IPv6 or custom DHCP options are on.
+  `vlan_id` changes in place instead of destroying and recreating the network.
+  An unset `interface_ids` is no longer sent as `[]` (unbinding every port); an
+  update that would drop a network's ports is refused.
+- `omada_attack_defense_setting`: the optional limits and toggles keep their
+  live value when unset, instead of failing the apply or planning a change to
+  null.
+- `omada_switch_port_profile`: creating a profile requires
+  `spanning_tree_enable`, `loopback_detect_enable`, `port_isolation_enable` and
+  `lldp_med_enable`; the SDK sends them as plain booleans, so unset ones created
+  the profile with those protections off.
+
+
 FIXES (state accuracy, homelab #514):
 - Objects deleted outside Terraform are now dropped from state, so the plan
   shows them. `omada_acl`, `omada_lan_network`, `omada_ssid` and
@@ -41,7 +65,8 @@ FIXES:
   #235).
 
 SECURITY:
-- Bump every module to its current release and the `go` directive to 1.26.8.
+- Bump every module to its current release, including `omada-go-sdk` 0.5.0 →
+  0.6.0, and the `go` directive to 1.26.8.
   `govulncheck` on 0.14.0 reported 12 reachable vulnerabilities (grpc, x/net,
   x/text, and the Go 1.25.8 standard library the release was built with); it
   now reports none. grpc is held at 1.83.2 because 1.84.0 is affected by
