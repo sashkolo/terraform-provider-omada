@@ -1,5 +1,22 @@
 ## 0.15.0
 
+FEATURES (client, homelab #516):
+- `tls_server_sha256` (`OMADA_TLS_SERVER_SHA256`) pins the controller's
+  certificate by its SHA-256 fingerprint, so a self-signed controller no longer
+  needs `tls_skip_verify`. `ca_cert_pem` (`OMADA_CA_CERT_PEM`) trusts a given CA
+  with normal verification.
+- `request_timeout` (`OMADA_REQUEST_TIMEOUT`, default 60 s) bounds each
+  request; a controller that stopped answering used to hang the run and hold
+  the state lock.
+
+FIXES (client, homelab #516):
+- The access token is renewed before it expires, and once more when the
+  controller rejects it (-44112/-44113 or HTTP 401), with the request retried.
+  It used to be fetched once, so a run longer than its lifetime failed.
+- A refused token request reports the controller's message, not only the HTTP
+  status.
+
+
 FIXES (update semantics, homelab #515):
 - `omada_ssid`: settings left unset in config keep their live values on
   update. They were unknown on update and sent as hard-coded defaults, so a
