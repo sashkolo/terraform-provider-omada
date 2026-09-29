@@ -1,5 +1,7 @@
 package lannetwork
 
+import "encoding/json"
+
 // Lenient, provider-local decode types for this resource's result payloads.
 // The {errorCode, msg, result} envelope itself is decoded by
 // internal/envelope, which also explains why these types exist: the SDK's
@@ -12,6 +14,13 @@ type createResult struct {
 
 // dhcpReadVO mirrors the controller's dhcpSettingsVO shape on read.
 type dhcpReadVO struct {
+	// Unmodeled DHCP settings, carried or guarded on update (carry.go).
+	DhcpNextServer *string           `json:"dhcpNextServer"`
+	Option60       *string           `json:"option60"`
+	Option66       *string           `json:"option66"`
+	Option138      *string           `json:"option138"`
+	Options        []json.RawMessage `json:"options"`
+
 	Enable      *bool   `json:"enable"`
 	Dhcpns      *string `json:"dhcpns"`
 	Gateway     *string `json:"gateway"`
@@ -35,6 +44,26 @@ type lanNetworkReadRow struct {
 	IgmpSnoopEnable bool        `json:"igmpSnoopEnable"`
 	InterfaceIds    []string    `json:"interfaceIds"`
 	DhcpSettingsVO  *dhcpReadVO `json:"dhcpSettingsVO"`
+
+	// Unmodeled network settings, carried or guarded on update (carry.go).
+	AllLan               *bool           `json:"allLan"`
+	Application          *int32          `json:"application"`
+	DhcpL2RelayEnable    *bool           `json:"dhcpL2RelayEnable"`
+	Isolation            *bool           `json:"isolation"`
+	MldSnoopEnable       *bool           `json:"mldSnoopEnable"`
+	DhcpGuard            *enableFlag     `json:"dhcpGuard"`
+	Dhcpv6Guard          *enableFlag     `json:"dhcpv6Guard"`
+	LanNetworkIpv6Config *ipv6ConfigFlag `json:"lanNetworkIpv6Config"`
+}
+
+// enableFlag reads only the on/off switch of a nested setting object.
+type enableFlag struct {
+	Enable *bool `json:"enable"`
+}
+
+// ipv6ConfigFlag reads only whether a network's IPv6 is on (0 = off).
+type ipv6ConfigFlag struct {
+	Enable *int32 `json:"enable"`
 }
 
 // listResult is the paged list payload.

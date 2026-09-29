@@ -104,6 +104,10 @@ func TestAcc_SwitchPortProfileResource(t *testing.T) {
 					name               = "Outdoor-Untrusted"
 					native_network_id  = "net-outdoor"
 					tagged_network_ids = []
+					port_isolation_enable  = false
+					lldp_med_enable        = true
+					loopback_detect_enable = false
+					spanning_tree_enable   = false
 				}
 				`,
 				Check: resource.ComposeAggregateTestCheckFunc(
@@ -136,6 +140,10 @@ func TestAcc_SwitchPortProfileResource(t *testing.T) {
 					name               = "Outdoor-Untrusted-2"
 					native_network_id  = "net-outdoor"
 					tagged_network_ids = []
+					port_isolation_enable  = false
+					lldp_med_enable        = true
+					loopback_detect_enable = false
+					spanning_tree_enable   = false
 				}
 				`,
 				Check: resource.ComposeAggregateTestCheckFunc(

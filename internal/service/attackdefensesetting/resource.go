@@ -12,6 +12,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 )
@@ -118,11 +120,28 @@ func (r *attackDefenseSettingResource) Schema(_ context.Context, _ resource.Sche
 func requiredBool(desc string) schema.BoolAttribute {
 	return schema.BoolAttribute{Description: desc, Required: true}
 }
+
+// optionalBool and optionalInt32 are Optional+Computed and keep their state
+// value when unset (homelab #515). As plain Optional, a value the controller
+// returned but the config left unset made the apply fail with an inconsistent
+// result or plan a perpetual change to null, and removing one from config left
+// the live value in place while the plan claimed to clear it. Unset now means
+// "keep the live value"; set one explicitly to change it.
 func optionalBool(desc string) schema.BoolAttribute {
-	return schema.BoolAttribute{Description: desc, Optional: true}
+	return schema.BoolAttribute{
+		Description:   desc + " When unset, the live value is kept.",
+		Optional:      true,
+		Computed:      true,
+		PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+	}
 }
 func optionalInt32(desc string) schema.Int32Attribute {
-	return schema.Int32Attribute{Description: desc, Optional: true}
+	return schema.Int32Attribute{
+		Description:   desc + " When unset, the live value is kept.",
+		Optional:      true,
+		Computed:      true,
+		PlanModifiers: []planmodifier.Int32{int32planmodifier.UseStateForUnknown()},
+	}
 }
 
 // readAttackDefenseSetting fetches the singleton and refreshes the model in

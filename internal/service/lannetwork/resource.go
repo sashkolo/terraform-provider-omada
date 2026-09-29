@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -91,11 +92,9 @@ func (r *lanNetworkResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			},
 			"vlan_id": schema.Int32Attribute{
 				Description: "802.1Q VLAN tag for this network. Must be in the range 1-4094 and unused by any " +
-					"other network or WAN interface. Changing this forces replacement.",
+					"other network or WAN interface. Changed in place: replacing the network would delete it, " +
+					"with everything that references it, before the new one exists (homelab #515).",
 				Required: true,
-				PlanModifiers: []planmodifier.Int32{
-					int32planmodifier.RequiresReplace(),
-				},
 			},
 			"purpose": schema.Int32Attribute{
 				Description: "LAN network purpose. `1` = interface (the default; a gateway-terminated network with " +
@@ -123,9 +122,15 @@ func (r *lanNetworkResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Optional:    true,
 			},
 			"igmp_snoop_enable": schema.BoolAttribute{
-				Description: "Enable IGMP snooping on this network. Defaults to `false`.",
-				Optional:    true,
-				Computed:    true,
+				Description: "Enable IGMP snooping on this network. Defaults to `false` on create; when unset, " +
+					"an update keeps the live value.",
+				Optional: true,
+				Computed: true,
+				// Without this the value is unknown on update, and the SDK sends it as
+				// false, turning snooping off (homelab #515).
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"dhcp_settings": schema.SingleNestedAttribute{
 				Description: "Gateway-served DHCP configuration. Omit for a VLAN with no DHCP served by the gateway.",
@@ -272,8 +277,33 @@ func (r *lanNetworkResource) Update(ctx context.Context, req resource.UpdateRequ
 	plan.NetworkId = state.NetworkId
 	plan.SiteId = state.SiteId
 
+	// Read-modify-write: the settings this resource doesn't model are sent back
+	// with their live values, or the update is refused when one can't be
+	// carried safely (homelab #515).
+	live := findLanNetworkInList(ctx, &resp.Diagnostics, r, &plan)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if live == nil {
+		resp.Diagnostics.AddError("Error updating LAN network",
+			fmt.Sprintf("LAN network %s is not in the site's list, so its unmodeled settings can't be preserved.", plan.NetworkId.ValueString()))
+		return
+	}
+	if plan.InterfaceIds == nil && len(live.InterfaceIds) > 0 {
+		// Omitting the list would read back the live ports as an inconsistent
+		// result, and sending [] would unbind them; refuse before writing.
+		resp.Diagnostics.AddError("Error updating LAN network", fmt.Sprintf(
+			"interface_ids is unset, but LAN network %q is bound to %d gateway port(s). Set interface_ids to "+
+				"the ports it should keep.", live.Name, len(live.InterfaceIds)))
+		return
+	}
+	body := expandLanNetwork(plan)
+	if !carryUnmodeled(&body, live, &resp.Diagnostics) {
+		return
+	}
+
 	_, httpResp, callErr := r.client.WiredNetworkAPI.ModifyLanNetwork(ctx, r.omadacId, plan.SiteId.ValueString(), plan.NetworkId.ValueString()).
-		LanNetworkOpenApiVO(expandLanNetwork(plan)).Execute()
+		LanNetworkOpenApiVO(body).Execute()
 	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "updating LAN network")
 	if !ok {
 		return

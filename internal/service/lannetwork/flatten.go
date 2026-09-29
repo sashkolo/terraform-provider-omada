@@ -24,9 +24,13 @@ func flattenDhcpRead(s *dhcpReadVO) *dhcpSettingsModel {
 }
 
 // flattenInterfaceIds converts the controller's interface ID list into the
-// Terraform list. Always returns a non-nil slice so it serializes as [] when
-// empty.
-func flattenInterfaceIds(ids []string) []types.String {
+// Terraform list. An empty live list stays null when the prior value was null
+// (the attribute unset), so an unset list doesn't read back as [] and fail the
+// apply with an inconsistent result; otherwise it serializes as [].
+func flattenInterfaceIds(ids []string, prior []types.String) []types.String {
+	if len(ids) == 0 && prior == nil {
+		return nil
+	}
 	out := make([]types.String, 0, len(ids))
 	for _, id := range ids {
 		out = append(out, types.StringValue(id))
@@ -50,6 +54,6 @@ func flattenLanNetworkRead(m *lanNetworkResourceModel, r *lanNetworkReadRow) {
 	m.GatewaySubnet = types.StringPointerValue(r.GatewaySubnet)
 	m.Domain = types.StringPointerValue(r.Domain)
 	m.IgmpSnoopEnable = types.BoolValue(r.IgmpSnoopEnable)
-	m.InterfaceIds = flattenInterfaceIds(r.InterfaceIds)
+	m.InterfaceIds = flattenInterfaceIds(r.InterfaceIds, m.InterfaceIds)
 	m.DhcpSettings = flattenDhcpRead(r.DhcpSettingsVO)
 }
