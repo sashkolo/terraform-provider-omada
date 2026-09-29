@@ -3,12 +3,12 @@
 page_title: "omada_switch_port_profile Resource - omada"
 subcategory: "Switch"
 description: |-
-  Manages a reusable Omada switch (OSW) LAN/port profile: the object a switch port is assigned to, which defines the port's VLAN membership. A profile with a native_network_id and no tagged_network_ids is an access/untagged port on that VLAN; adding tagged networks makes it a trunk. Targets the Open API v1 profile surface (/openapi/v1/.../lan-profiles) implemented by controller firmware such as 5.15.x (the v2 surface returns 404 there). Requires one of: Site Settings Manager Modify or Network Config Page Modify.
+  Manages a reusable Omada switch (OSW) LAN/port profile: the object a switch port is assigned to, which defines the port's VLAN membership. A profile with a native_network_id and no tagged_network_ids is an access/untagged port on that VLAN; adding tagged networks makes it a trunk. Targets the Open API v1 profile surface (/openapi/v1/.../lan-profiles) implemented by controller firmware such as 5.15.x (the v2 surface returns 404 there). Deleting a profile that a switch port still uses is refused: move the ports first, in an earlier apply or with create_before_destroy on the profile, because Terraform deletes the profile before it updates the ports. Requires one of: Site Settings Manager Modify or Network Config Page Modify, plus Site Device Manager View Only to check the ports.
 ---
 
 # omada_switch_port_profile (Resource)
 
-Manages a reusable Omada switch (OSW) LAN/port profile: the object a switch port is assigned to, which defines the port's VLAN membership. A profile with a `native_network_id` and no `tagged_network_ids` is an access/untagged port on that VLAN; adding tagged networks makes it a trunk. Targets the Open API v1 profile surface (`/openapi/v1/.../lan-profiles`) implemented by controller firmware such as 5.15.x (the v2 surface returns 404 there). Requires one of: `Site Settings Manager Modify` or `Network Config Page Modify`.
+Manages a reusable Omada switch (OSW) LAN/port profile: the object a switch port is assigned to, which defines the port's VLAN membership. A profile with a `native_network_id` and no `tagged_network_ids` is an access/untagged port on that VLAN; adding tagged networks makes it a trunk. Targets the Open API v1 profile surface (`/openapi/v1/.../lan-profiles`) implemented by controller firmware such as 5.15.x (the v2 surface returns 404 there). Deleting a profile that a switch port still uses is refused: move the ports first, in an earlier apply or with `create_before_destroy` on the profile, because Terraform deletes the profile before it updates the ports. Requires one of: `Site Settings Manager Modify` or `Network Config Page Modify`, plus `Site Device Manager View Only` to check the ports.
 
 ## Example Usage
 

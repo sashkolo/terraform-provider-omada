@@ -25,10 +25,20 @@ type fakeProfileController struct {
 	// between Terraform's refresh and its delete.
 	vanishCode int
 	posts      int
+	// switches are the site's switches, keyed by MAC, each mapping port
+	// number to profile id. deviceErr, when set, fails the device list with
+	// that controller error. extraAps puts that many APs before the switches,
+	// so the switches land on a later page of the device list.
+	switches  map[string]map[int32]string
+	deviceErr int
+	extraAps  int
 }
 
 func newFakeProfileController(t *testing.T) (*fakeProfileController, *acctest.TestServer) {
-	f := &fakeProfileController{rows: map[string]map[string]any{}}
+	f := &fakeProfileController{
+		rows:     map[string]map[string]any{},
+		switches: map[string]map[int32]string{testSwitchMac: {1: "profile-all", 8: "profile-all"}},
+	}
 	ts := acctest.NewTestServer(t)
 
 	write := func(w http.ResponseWriter, v any) {
@@ -78,6 +88,7 @@ func newFakeProfileController(t *testing.T) (*fakeProfileController, *acctest.Te
 		delete(f.rows, id)
 		write(w, map[string]any{"errorCode": 0, "msg": "Success."})
 	})
+	f.serveSwitches(ts, write)
 	return f, ts
 }
 

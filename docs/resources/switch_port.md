@@ -3,12 +3,12 @@
 page_title: "omada_switch_port Resource - omada"
 subcategory: "Switch"
 description: |-
-  Manages the per-port assignment on a managed Omada switch: which reusable port profile the port uses (and therefore its VLAN posture), plus the port name, PoE mode, and admin state. A physical port always exists, so this behaves like a singleton keyed by (site_id, switch_mac, port): Create/Update apply the settings via the per-port Modify endpoint and Delete is a no-op. Targets the Open API v1 switch surface (GET /switches/{mac} read, PATCH /switches/{mac}/ports/{port} write) implemented by controller firmware such as 5.15.x. The port's VLAN membership is governed by the referenced omada_switch_port_profile. Requires Site Device Manager Modify.
+  Manages the per-port assignment on a managed Omada switch: which reusable port profile the port uses (and therefore its VLAN posture), plus the port name, PoE mode, and admin state. A physical port always exists, so this behaves like a singleton keyed by (site_id, switch_mac, port): Create/Update apply the settings via the per-port Modify endpoint and Delete leaves the port on its profile (with a warning). Targets the Open API v1 switch surface (GET /switches/{mac} read, PATCH /switches/{mac}/ports/{port} write) implemented by controller firmware such as 5.15.x. The port's VLAN membership is governed by the referenced omada_switch_port_profile. Requires Site Device Manager Modify.
 ---
 
 # omada_switch_port (Resource)
 
-Manages the per-port assignment on a managed Omada switch: which reusable port profile the port uses (and therefore its VLAN posture), plus the port name, PoE mode, and admin state. A physical port always exists, so this behaves like a singleton keyed by (site_id, switch_mac, port): Create/Update apply the settings via the per-port Modify endpoint and Delete is a no-op. Targets the Open API v1 switch surface (`GET /switches/{mac}` read, `PATCH /switches/{mac}/ports/{port}` write) implemented by controller firmware such as 5.15.x. The port's VLAN membership is governed by the referenced `omada_switch_port_profile`. Requires `Site Device Manager Modify`.
+Manages the per-port assignment on a managed Omada switch: which reusable port profile the port uses (and therefore its VLAN posture), plus the port name, PoE mode, and admin state. A physical port always exists, so this behaves like a singleton keyed by (site_id, switch_mac, port): Create/Update apply the settings via the per-port Modify endpoint and Delete leaves the port on its profile (with a warning). Targets the Open API v1 switch surface (`GET /switches/{mac}` read, `PATCH /switches/{mac}/ports/{port}` write) implemented by controller firmware such as 5.15.x. The port's VLAN membership is governed by the referenced `omada_switch_port_profile`. Requires `Site Device Manager Modify`.
 
 ## Example Usage
 
