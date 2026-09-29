@@ -7,18 +7,18 @@ variable "site_id" {
 resource "omada_lan_network" "example" {
   site_id        = var.site_id
   name           = "IoT"
-  vlan_id        = 30
-  gateway_subnet = "192.168.30.1/24"
+  vlan_id        = 100
+  gateway_subnet = "192.168.100.1/24"
   domain         = "iot.local"
 
   dhcp_settings = {
     enable       = true
     dhcpns       = "manual"
-    gateway      = "192.168.30.1"
-    ipaddr_start = "192.168.30.100"
-    ipaddr_end   = "192.168.30.250"
+    gateway      = "192.168.100.1"
+    ipaddr_start = "192.168.100.100"
+    ipaddr_end   = "192.168.100.250"
     leasetime    = 1440
-    pri_dns      = "192.168.30.1"
+    pri_dns      = "192.168.100.1"
     snd_dns      = "8.8.8.8"
   }
 }

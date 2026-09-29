@@ -70,7 +70,7 @@ func TestAcc_SitesDataSource(t *testing.T) {
 	})
 }
 
-// TestAcc_SitesDataSourceControllerError is the homelab #235 regression: an
+// TestAcc_SitesDataSourceControllerError is a regression test: an
 // error envelope (here an expired token) has no result, and the data source
 // dereferenced it and crashed the provider instead of reporting the error.
 func TestAcc_SitesDataSourceControllerError(t *testing.T) {

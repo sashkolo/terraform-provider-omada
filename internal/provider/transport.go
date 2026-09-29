@@ -14,8 +14,7 @@ import (
 )
 
 // defaultRequestTimeout bounds each controller request. Without a timeout, a
-// controller that stops answering held the run, and the state lock, forever
-// (homelab #516).
+// controller that stops answering held the run, and the state lock, forever.
 const defaultRequestTimeout = 60 * time.Second
 
 // tlsOptions is how the provider trusts the controller's certificate.

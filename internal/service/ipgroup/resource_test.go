@@ -27,11 +27,11 @@ func TestAcc_IPGroupResource(t *testing.T) {
 	// than null it. The nested ipList description *is* returned.
 	listRow := map[string]any{
 		"groupId": "test-group-id",
-		"name":    "vigi-cameras",
+		"name":    "camera-hosts",
 		"type":    int32(0),
 		"ipList": []any{
-			map[string]any{"ip": "192.168.30.51", "mask": int32(32), "description": "cam-porch"},
-			map[string]any{"ip": "192.168.30.0", "mask": int32(24)},
+			map[string]any{"ip": "192.168.100.51", "mask": int32(32), "description": "cam-porch"},
+			map[string]any{"ip": "192.168.100.0", "mask": int32(24)},
 		},
 	}
 
@@ -90,24 +90,24 @@ func TestAcc_IPGroupResource(t *testing.T) {
 				Config: ts.ProviderConfig + `
 				resource "omada_ip_group" "test" {
 					site_id     = "test-site-id"
-					name        = "vigi-cameras"
-					description = "VIGI camera hosts"
+					name        = "camera-hosts"
+					description = "Camera hosts"
 					ip_list = [
-						{ ip = "192.168.30.51", mask = 32, description = "cam-porch" },
-						{ ip = "192.168.30.0", mask = 24 },
+						{ ip = "192.168.100.51", mask = 32, description = "cam-porch" },
+						{ ip = "192.168.100.0", mask = 24 },
 					]
 				}
 				`,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("omada_ip_group.test", "group_id", "test-group-id"),
 					resource.TestCheckResourceAttr("omada_ip_group.test", "site_id", "test-site-id"),
-					resource.TestCheckResourceAttr("omada_ip_group.test", "name", "vigi-cameras"),
-					resource.TestCheckResourceAttr("omada_ip_group.test", "description", "VIGI camera hosts"),
+					resource.TestCheckResourceAttr("omada_ip_group.test", "name", "camera-hosts"),
+					resource.TestCheckResourceAttr("omada_ip_group.test", "description", "Camera hosts"),
 					resource.TestCheckResourceAttr("omada_ip_group.test", "ip_list.#", "2"),
-					resource.TestCheckResourceAttr("omada_ip_group.test", "ip_list.0.ip", "192.168.30.51"),
+					resource.TestCheckResourceAttr("omada_ip_group.test", "ip_list.0.ip", "192.168.100.51"),
 					resource.TestCheckResourceAttr("omada_ip_group.test", "ip_list.0.mask", "32"),
 					resource.TestCheckResourceAttr("omada_ip_group.test", "ip_list.0.description", "cam-porch"),
-					resource.TestCheckResourceAttr("omada_ip_group.test", "ip_list.1.ip", "192.168.30.0"),
+					resource.TestCheckResourceAttr("omada_ip_group.test", "ip_list.1.ip", "192.168.100.0"),
 					resource.TestCheckResourceAttr("omada_ip_group.test", "ip_list.1.mask", "24"),
 				),
 			},
@@ -127,16 +127,16 @@ func TestAcc_IPGroupResource(t *testing.T) {
 				Config: ts.ProviderConfig + `
 				resource "omada_ip_group" "test" {
 					site_id     = "test-site-id"
-					name        = "vigi-cameras-2"
-					description = "VIGI camera hosts"
+					name        = "camera-hosts-2"
+					description = "Camera hosts"
 					ip_list = [
-						{ ip = "192.168.30.51", mask = 32, description = "cam-porch" },
-						{ ip = "192.168.30.0", mask = 24 },
+						{ ip = "192.168.100.51", mask = 32, description = "cam-porch" },
+						{ ip = "192.168.100.0", mask = 24 },
 					]
 				}
 				`,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("omada_ip_group.test", "name", "vigi-cameras-2"),
+					resource.TestCheckResourceAttr("omada_ip_group.test", "name", "camera-hosts-2"),
 				),
 			},
 		},
@@ -155,10 +155,10 @@ func TestAcc_IPGroupResource_CreateWithoutId(t *testing.T) {
 
 	listRow := map[string]any{
 		"groupId": "recovered-group-id",
-		"name":    "vigi-cameras",
+		"name":    "camera-hosts",
 		"type":    int32(0),
 		"ipList": []any{
-			map[string]any{"ip": "192.168.30.0", "mask": int32(24)},
+			map[string]any{"ip": "192.168.100.0", "mask": int32(24)},
 		},
 	}
 	writeJSON := func(w http.ResponseWriter, body string) {
@@ -185,9 +185,9 @@ func TestAcc_IPGroupResource_CreateWithoutId(t *testing.T) {
 				Config: ts.ProviderConfig + `
 				resource "omada_ip_group" "test" {
 					site_id = "test-site-id"
-					name    = "vigi-cameras"
+					name    = "camera-hosts"
 					ip_list = [
-						{ ip = "192.168.30.0", mask = 24 },
+						{ ip = "192.168.100.0", mask = 24 },
 					]
 				}
 				`,

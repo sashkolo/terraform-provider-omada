@@ -139,7 +139,7 @@ func (d *sitesDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 
 	// The SDK decodes an error envelope ({errorCode, msg} with no result, for
 	// example an expired token) without error, so check the envelope before
-	// touching Result; dereferencing it crashed the provider (homelab #235).
+	// touching Result; dereferencing it crashed the provider.
 	if response == nil || response.ErrorCode == nil {
 		resp.Diagnostics.AddError("Unable to Read Omada Sites",
 			"Controller response has no errorCode; it is not an Open API answer.")

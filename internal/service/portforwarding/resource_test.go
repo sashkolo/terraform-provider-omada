@@ -21,7 +21,7 @@ func TestAcc_PortForwardingResource(t *testing.T) {
 		"name":               "WireGuard",
 		"status":             true,
 		"externalPort":       "51820",
-		"forwardIp":          "192.168.50.5",
+		"forwardIp":          "192.168.1.5",
 		"forwardPort":        "51820",
 		"protocol":           int32(2),
 		"from":               int32(0),
@@ -139,7 +139,7 @@ resource "omada_port_forwarding" "wireguard" {
   name            = "WireGuard"
   status          = true
   external_port   = "51820"
-  forward_ip      = "192.168.50.5"
+  forward_ip      = "192.168.1.5"
   forward_port    = "51820"
   protocol        = 2
   wan_port_ids    = ["wan-primary"]
@@ -151,7 +151,7 @@ resource "omada_port_forwarding" "wireguard" {
 					resource.TestCheckResourceAttr("omada_port_forwarding.wireguard", "site_id", "test-site-id"),
 					resource.TestCheckResourceAttr("omada_port_forwarding.wireguard", "name", "WireGuard"),
 					resource.TestCheckResourceAttr("omada_port_forwarding.wireguard", "external_port", "51820"),
-					resource.TestCheckResourceAttr("omada_port_forwarding.wireguard", "forward_ip", "192.168.50.5"),
+					resource.TestCheckResourceAttr("omada_port_forwarding.wireguard", "forward_ip", "192.168.1.5"),
 					resource.TestCheckResourceAttr("omada_port_forwarding.wireguard", "forward_port", "51820"),
 					resource.TestCheckResourceAttr("omada_port_forwarding.wireguard", "protocol", "2"),
 					resource.TestCheckResourceAttr("omada_port_forwarding.wireguard", "wan_port_ids.0", "wan-primary"),
@@ -172,7 +172,7 @@ resource "omada_port_forwarding" "wireguard" {
   name            = "WireGuard restricted"
   status          = true
   external_port   = "51820"
-  forward_ip      = "192.168.50.5"
+  forward_ip      = "192.168.1.5"
   forward_port    = "51820"
   protocol        = 2
   wan_port_ids    = ["wan-primary"]

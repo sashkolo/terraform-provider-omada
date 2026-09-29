@@ -28,7 +28,7 @@ const listPageSize int32 = 1000
 
 // maxListPages bounds the paging loop: a controller that ignores `page` and
 // answers every request with a full page and no totalRows would otherwise be
-// paged forever (homelab #514). 100 pages is 100,000 rules, far past any site.
+// paged forever. 100 pages is 100,000 rules, far past any site.
 const maxListPages int32 = 100
 
 var (
@@ -266,7 +266,7 @@ func (r *portForwardingResource) Create(ctx context.Context, req resource.Create
 	if !awaitRead(ctx, &resp.Diagnostics, r, &plan) {
 		// The rule exists on the controller and its id is known: keep it in
 		// state (tainted) rather than orphaning an open port forward, so the next
-		// apply replaces it instead of failing on a duplicate name (homelab #514).
+		// apply replaces it instead of failing on a duplicate name.
 		resp.Diagnostics.Append(tfstate.SaveCreated(ctx, req.Plan, &resp.State, "port_forwarding_id", plan.PortForwardingId.ValueString())...)
 		resp.Diagnostics.AddError(
 			"Error creating port forwarding",
@@ -349,7 +349,7 @@ func (r *portForwardingResource) Delete(ctx context.Context, req resource.Delete
 	}
 	// A rejected delete of a rule that is already gone is the desired end
 	// state. The not-found code isn't documented for this endpoint, so confirm
-	// against the list instead of trusting a code (homelab #514).
+	// against the list instead of trusting a code.
 	if env.HasError() {
 		var listDiags diag.Diagnostics
 		if _, found := findByIDConfirmed(ctx, &listDiags, r, &state); !listDiags.HasError() && !found {

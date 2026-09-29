@@ -23,7 +23,7 @@ const (
 )
 
 // fakeWlanGroupController models the parts of the controller that state
-// accuracy depends on (homelab #514): a list that is the only way to read a
+// accuracy depends on: a list that is the only way to read a
 // group, a DELETE that answers -1001 both for a missing group and for a
 // rejected one, and switches to delete a group behind Terraform's back or to
 // hide it from lists.

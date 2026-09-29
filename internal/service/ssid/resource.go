@@ -113,7 +113,7 @@ func (r *ssidResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Optional:    true,
 				Computed:    true,
 				// Unset in config means "keep the live value": without this the value is
-				// unknown on update and a hard-coded default is sent (homelab #515).
+				// unknown on update and a hard-coded default is sent.
 				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.UseStateForUnknown(),
 				},
@@ -123,7 +123,7 @@ func (r *ssidResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Optional:    true,
 				Computed:    true,
 				// Unset in config means "keep the live value": without this the value is
-				// unknown on update and a hard-coded default is sent (homelab #515).
+				// unknown on update and a hard-coded default is sent.
 				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.UseStateForUnknown(),
 				},
@@ -133,7 +133,7 @@ func (r *ssidResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Optional:    true,
 				Computed:    true,
 				// Unset in config means "keep the live value": without this the value is
-				// unknown on update and a hard-coded default is sent (homelab #515).
+				// unknown on update and a hard-coded default is sent.
 				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.UseStateForUnknown(),
 				},
@@ -144,7 +144,7 @@ func (r *ssidResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Optional: true,
 				Computed: true,
 				// Unset in config means "keep the live value": without this the value is
-				// unknown on update and a hard-coded default is sent (homelab #515).
+				// unknown on update and a hard-coded default is sent.
 				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.UseStateForUnknown(),
 				},
@@ -154,7 +154,7 @@ func (r *ssidResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Optional:    true,
 				Computed:    true,
 				// Unset in config means "keep the live value": without this the value is
-				// unknown on update and a hard-coded default is sent (homelab #515).
+				// unknown on update and a hard-coded default is sent.
 				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.UseStateForUnknown(),
 				},
@@ -165,7 +165,7 @@ func (r *ssidResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Optional: true,
 				Computed: true,
 				// Unset in config means "keep the live value": without this the value is
-				// unknown on update and a hard-coded default is sent (homelab #515).
+				// unknown on update and a hard-coded default is sent.
 				PlanModifiers: []planmodifier.Int32{
 					int32planmodifier.UseStateForUnknown(),
 				},
@@ -176,7 +176,7 @@ func (r *ssidResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Optional: true,
 				Computed: true,
 				// Unset in config means "keep the live value": without this the value is
-				// unknown on update and a hard-coded default is sent (homelab #515).
+				// unknown on update and a hard-coded default is sent.
 				PlanModifiers: []planmodifier.Int32{
 					int32planmodifier.RequiresReplace(),
 					int32planmodifier.UseStateForUnknown(),
@@ -188,7 +188,7 @@ func (r *ssidResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Optional: true,
 				Computed: true,
 				// Unset in config means "keep the live value": without this the value is
-				// unknown on update and a hard-coded default is sent (homelab #515).
+				// unknown on update and a hard-coded default is sent.
 				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.UseStateForUnknown(),
 				},
@@ -219,7 +219,7 @@ func (r *ssidResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 						Optional:    true,
 						Computed:    true,
 						// Unset in config means "keep the live value": without this the value is
-						// unknown on update and a hard-coded default is sent (homelab #515).
+						// unknown on update and a hard-coded default is sent.
 						PlanModifiers: []planmodifier.Int32{
 							int32planmodifier.UseStateForUnknown(),
 						},
@@ -229,7 +229,7 @@ func (r *ssidResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 						Optional:    true,
 						Computed:    true,
 						// Unset in config means "keep the live value": without this the value is
-						// unknown on update and a hard-coded default is sent (homelab #515).
+						// unknown on update and a hard-coded default is sent.
 						PlanModifiers: []planmodifier.Int32{
 							int32planmodifier.UseStateForUnknown(),
 						},
@@ -239,7 +239,7 @@ func (r *ssidResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 						Optional:    true,
 						Computed:    true,
 						// Unset in config means "keep the live value": without this the value is
-						// unknown on update and a hard-coded default is sent (homelab #515).
+						// unknown on update and a hard-coded default is sent.
 						PlanModifiers: []planmodifier.Bool{
 							boolplanmodifier.UseStateForUnknown(),
 						},
@@ -299,7 +299,7 @@ func (r *ssidResource) Create(ctx context.Context, req resource.CreateRequest, r
 	if !awaitReadSsid(ctx, &resp.Diagnostics, r, &plan) {
 		// The SSID exists on the controller: keep it in state (tainted) rather
 		// than orphaning it, so a re-apply replaces it instead of creating a
-		// second SSID of the same name (homelab #514).
+		// second SSID of the same name.
 		resp.Diagnostics.Append(tfstate.SaveCreated(ctx, req.Plan, &resp.State, "ssid_id", plan.SsidId.ValueString())...)
 		resp.Diagnostics.AddError(
 			"Error creating SSID",
@@ -331,7 +331,7 @@ func (r *ssidResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	if !found {
 		// Deleted outside Terraform. Setting nothing would keep the prior state,
 		// which the framework pre-fills, so the SSID would silently stay
-		// "managed" (homelab #514).
+		// "managed".
 		resp.State.RemoveResource(ctx)
 		return
 	}
@@ -360,8 +360,8 @@ func (r *ssidResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	plan.WlanGroupId = state.WlanGroupId
 
 	// Read-modify-write: settings the resource doesn't model are sent back with
-	// their live values rather than left to the endpoint's defaults (homelab
-	// #515). greEnable, oweEnable and prohibitWifiShare are not returned by the
+	// their live values rather than left to the endpoint's defaults.
+	// greEnable, oweEnable and prohibitWifiShare are not returned by the
 	// detail read on 6.2.10, so they can't be carried; greEnable is still sent
 	// as false because the endpoint rejects a body without it.
 	live, refused := getSsidDetail(ctx, &resp.Diagnostics, r, &plan)
@@ -418,7 +418,7 @@ func (r *ssidResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	// A rejected delete of an SSID that is already gone is the desired end
 	// state. The controller answers a missing SSID with -1001, which is also
 	// its generic "invalid request parameters", so a code alone once dropped a
-	// live SSID from state; confirm against the list instead (homelab #514).
+	// live SSID from state; confirm against the list instead.
 	if env.HasError() {
 		var listDiags diag.Diagnostics
 		if listed := ssidListedConfirmed(ctx, &listDiags, r, &state); !listDiags.HasError() && !listed {
@@ -613,7 +613,7 @@ func getSsidDetail(ctx context.Context, diags *diag.Diagnostics, r *ssidResource
 // controller answers a missing SSID with -1001, which is also its generic
 // "invalid request parameters", so a refused detail read is never believed on
 // its own: the WLAN group's SSID list must also miss the SSID. Believing the
-// code once risked dropping a live SSID from state (homelab #514).
+// code once risked dropping a live SSID from state.
 func readSsid(ctx context.Context, diags *diag.Diagnostics, r *ssidResource, model *ssidResourceModel) bool {
 	detail, refused := getSsidDetail(ctx, diags, r, model)
 	if diags.HasError() {

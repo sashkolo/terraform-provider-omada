@@ -13,7 +13,7 @@ import (
 )
 
 // fakePortForwardingController models the parts of the controller that state
-// accuracy depends on (homelab #514): a paged list that is the only way to read
+// accuracy depends on: a paged list that is the only way to read
 // a rule, and switches to hide rules from it or to ignore the page parameter.
 type fakePortForwardingController struct {
 	mu     sync.Mutex
@@ -59,7 +59,7 @@ func newFakePortForwardingController(t *testing.T) (*fakePortForwardingControlle
 			}
 			data := make([]any, 1000)
 			for i := range data {
-				data[i] = map[string]any{"id": fmt.Sprintf("other-%d", i), "name": "other", "forwardIp": "192.168.50.9"}
+				data[i] = map[string]any{"id": fmt.Sprintf("other-%d", i), "name": "other", "forwardIp": "192.168.1.9"}
 			}
 			write(w, map[string]any{"errorCode": 0, "msg": "", "result": map[string]any{"data": data}})
 			return
@@ -95,7 +95,7 @@ resource "omada_port_forwarding" "test" {
   name             = "WireGuard"
   status           = true
   external_port    = "51820"
-  forward_ip       = "192.168.50.5"
+  forward_ip       = "192.168.1.5"
   forward_port     = "51820"
   protocol         = 2
   wan_port_ids     = ["wan-primary"]

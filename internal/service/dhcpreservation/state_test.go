@@ -14,7 +14,7 @@ import (
 )
 
 // fakeReservationController models the parts of the controller that state
-// accuracy depends on (homelab #514): a MAC-keyed grid that is the only way to
+// accuracy depends on: a MAC-keyed grid that is the only way to
 // read a reservation, a POST that rejects a MAC that is already reserved, and a
 // switch to hide every row from the grid.
 type fakeReservationController struct {
@@ -86,8 +86,8 @@ func (f *fakeReservationController) setHidden(v bool) {
 const stateTestReservation = `
 resource "omada_dhcp_reservation" "test" {
 	site_id = "test-site-id"
-	mac     = "E8-6B-EA-ED-97-3C"
-	ip      = "192.168.20.13"
+	mac     = "00-00-5E-00-53-31"
+	ip      = "192.168.110.13"
 	net_id  = "personal-net-id"
 }
 `

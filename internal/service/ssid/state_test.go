@@ -23,7 +23,7 @@ const (
 )
 
 // fakeSsidController models the parts of the controller that state accuracy
-// depends on (homelab #514): a detail GET and a list per WLAN group, a detail
+// depends on: a detail GET and a list per WLAN group, a detail
 // GET and DELETE that answer the generic -1001 in several situations, and
 // switches to delete an SSID or its whole group behind Terraform's back.
 type fakeSsidController struct {

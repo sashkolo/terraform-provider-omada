@@ -22,18 +22,18 @@ variable "site_id" {
 resource "omada_lan_network" "example" {
   site_id        = var.site_id
   name           = "IoT"
-  vlan_id        = 30
-  gateway_subnet = "192.168.30.1/24"
+  vlan_id        = 100
+  gateway_subnet = "192.168.100.1/24"
   domain         = "iot.local"
 
   dhcp_settings = {
     enable       = true
     dhcpns       = "manual"
-    gateway      = "192.168.30.1"
-    ipaddr_start = "192.168.30.100"
-    ipaddr_end   = "192.168.30.250"
+    gateway      = "192.168.100.1"
+    ipaddr_start = "192.168.100.100"
+    ipaddr_end   = "192.168.100.250"
     leasetime    = 1440
-    pri_dns      = "192.168.30.1"
+    pri_dns      = "192.168.100.1"
     snd_dns      = "8.8.8.8"
   }
 }
@@ -51,7 +51,7 @@ output "example_network_id" {
 - `gateway_subnet` (String) Gateway address and mask in CIDR (`IP/Mask`) form, e.g. `192.168.199.1/24`. Required for purpose `interface`; the gateway terminates this VLAN.
 - `name` (String) LAN network name. Must contain 1 to 128 characters and be unique within the site.
 - `site_id` (String) Site ID to create the network in. Changing this forces replacement.
-- `vlan_id` (Number) 802.1Q VLAN tag for this network. Must be in the range 1-4094 and unused by any other network or WAN interface. Changed in place: replacing the network would delete it, with everything that references it, before the new one exists (homelab #515).
+- `vlan_id` (Number) 802.1Q VLAN tag for this network. Must be in the range 1-4094 and unused by any other network or WAN interface. Changed in place: replacing the network would delete it, with everything that references it, before the new one exists.
 
 ### Optional
 
@@ -87,5 +87,5 @@ The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/c
 
 ```shell
 # A LAN network is imported as <site_id>/<network_id>.
-terraform import omada_lan_network.example 638ef75473919c1e1734f763/638ef75973919c1e1734f76b
+terraform import omada_lan_network.example 64b000000000000000000001/64b000000000000000000002
 ```

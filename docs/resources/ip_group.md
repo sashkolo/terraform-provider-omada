@@ -21,15 +21,15 @@ variable "site_id" {
 
 # A reusable IP group: one or more hosts/subnets an ACL can reference by group id
 # (source_type/destination_type = 1) instead of hard-coding whole-VLAN networks.
-# Here: two VIGI camera hosts on the outdoor VLAN.
-resource "omada_ip_group" "vigi_cameras" {
+# Here: two camera hosts on the untrusted VLAN.
+resource "omada_ip_group" "camera_hosts" {
   site_id     = var.site_id
-  name        = "vigi-cameras"
-  description = "VIGI camera hosts"
+  name        = "camera-hosts"
+  description = "Camera hosts"
 
   ip_list = [
-    { ip = "192.168.30.51", mask = 32, description = "cam-porch" },
-    { ip = "192.168.30.52", mask = 32, description = "cam-drive" },
+    { ip = "192.168.100.51", mask = 32, description = "cam-porch" },
+    { ip = "192.168.100.52", mask = 32, description = "cam-drive" },
   ]
 }
 
@@ -38,11 +38,11 @@ resource "omada_ip_group" "vigi_cameras" {
 #   resource "omada_acl" "example" {
 #     # ...
 #     destination_type = 1 # IP Group
-#     destination_ids  = [omada_ip_group.vigi_cameras.group_id]
+#     destination_ids  = [omada_ip_group.camera_hosts.group_id]
 #   }
 
-output "vigi_cameras_group_id" {
-  value = omada_ip_group.vigi_cameras.group_id
+output "camera_hosts_group_id" {
+  value = omada_ip_group.camera_hosts.group_id
 }
 ```
 
@@ -83,5 +83,5 @@ The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/c
 
 ```shell
 # An IP group is imported as <site_id>/<group_id>.
-terraform import omada_ip_group.vigi_cameras 638ef75473919c1e1734f763/67bf02ec4bb93a16f2eb3369
+terraform import omada_ip_group.camera_hosts 64b000000000000000000001/64b000000000000000000005
 ```

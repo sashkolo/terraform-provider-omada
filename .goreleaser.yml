@@ -42,13 +42,10 @@ checksum:
       name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
   name_template: '{{ .ProjectName }}_{{ .Version }}_SHA256SUMS'
   algorithm: sha256
-  # GPG signing of the checksum file is intentionally disabled: this fork's
-  # releases are consumed by the homelab (sashkolo/homelab) via a filesystem
-  # mirror that pins the SHA256SUMS digest and verifies every zip against an
-  # entry in that file (see utilities/omada/omadactl). That digest pin is the
-  # trust root for the homelab, so a detached GPG signature adds no security and
-  # would require a GPG private key secret that the fork does not configure. If
-  # upstreaming or publishing to a public registry, re-enable signing.
+  # GPG signing of the checksum file is intentionally disabled: releases are
+  # consumed from a filesystem mirror that pins the SHA256SUMS digest and
+  # verifies every zip against it, so the digest pin is the trust root. Publishing
+  # to a public registry requires a signed checksum file: re-enable signing then.
   # signs:
   #   - artifacts: checksum
   #     args:

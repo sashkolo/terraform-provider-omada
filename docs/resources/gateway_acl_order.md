@@ -31,10 +31,10 @@ resource "omada_gateway_acl_order" "home" {
 
   ordered_acl_ids = [
     omada_acl.camera_allow.acl_id, # allow, evaluated first
-    omada_acl.outdoor_deny_management.acl_id,
-    omada_acl.outdoor_deny_personal.acl_id,
-    omada_acl.outdoor_deny_public.acl_id,
-    omada_acl.outdoor_deny_home_lab.acl_id,
+    omada_acl.untrusted_deny_management.acl_id,
+    omada_acl.untrusted_deny_personal.acl_id,
+    omada_acl.untrusted_deny_public.acl_id,
+    omada_acl.untrusted_deny_servers.acl_id,
   ]
 }
 
@@ -58,5 +58,5 @@ The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/c
 
 ```shell
 # The gateway ACL order is a per-site singleton, imported by site_id.
-terraform import omada_gateway_acl_order.home 638ef75473919c1e1734f763
+terraform import omada_gateway_acl_order.home 64b000000000000000000001
 ```

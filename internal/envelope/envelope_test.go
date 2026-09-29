@@ -45,7 +45,7 @@ func TestDecode(t *testing.T) {
 			wantMsg: "Could not decode",
 		},
 		{
-			// homelab #235: a proxy's JSON error page on a failed DELETE was
+			// A proxy's JSON error page on a failed DELETE was
 			// treated as success, so destroy dropped a live rule from state.
 			name:    "HTTP 500 with a JSON body and no errorCode",
 			resp:    response(500, `{"timestamp":"2026-09-29","status":500,"error":"Internal Server Error"}`),

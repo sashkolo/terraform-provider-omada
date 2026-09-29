@@ -15,7 +15,7 @@ const (
 	statusOn  int32 = 1
 
 	// opSwitching is the default port operation. The controller expects an
-	// operation on the per-port modify body; the homelab manages ordinary
+	// operation on the per-port modify body; this resource manages ordinary
 	// switching ports.
 	opSwitching = "switching"
 )

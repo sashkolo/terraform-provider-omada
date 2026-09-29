@@ -23,7 +23,7 @@ resource "omada_ssid" "iot" {
 
   # Tag IoT client traffic onto the IoT VLAN (managed by omada_lan_network).
   vlan_enable = true
-  vlan_id     = 30
+  vlan_id     = 100
 
   psk_setting = {
     psk = var.ssid_psk

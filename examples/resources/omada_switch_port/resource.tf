@@ -8,9 +8,9 @@ variable "site_id" {
 # switch, port 8 is the UI's "1/0/8". The port's VLAN posture is governed by the
 # referenced profile, so an access/untagged profile with no tagged VLANs keeps an
 # exposed port off every sensitive VLAN.
-resource "omada_switch_port" "outdoor" {
+resource "omada_switch_port" "untrusted" {
   site_id    = var.site_id
-  switch_mac = "E4-FA-C4-9E-CD-87"
+  switch_mac = "00-00-5E-00-53-01"
   port       = 8
-  profile_id = "<outdoor-untrusted-profile-id>"
+  profile_id = "<untrusted-profile-id>"
 }

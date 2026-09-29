@@ -11,7 +11,7 @@ const (
 	// errProfileNotFound is the Open API's "This profile does not exist" code
 	// (DeleteLanProfile/ModifyLanProfile in the SDK docs). Delete treats it as
 	// success. It was -33517, a code the API does not document, so deleting an
-	// already-gone profile failed (homelab #514).
+	// already-gone profile failed.
 	errProfileNotFound int32 = -33507
 
 	// Controller defaults applied when the corresponding optional attribute is

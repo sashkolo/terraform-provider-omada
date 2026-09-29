@@ -1,6 +1,15 @@
+## Unreleased
+
+DOCS:
+- Examples, docs and test fixtures use documentation values (placeholder IDs,
+  `00-00-5E-00-53-xx` MACs, generic names) instead of values from a live
+  network.
+- The README describes the fork: its resources, behaviour, compatibility and
+  how to install it from a release.
+
 ## 0.16.0
 
-FIXES (switch-port guardrails, homelab #517):
+FIXES (switch-port guardrails):
 - `omada_switch_port` checks the switch before writing and refuses:
   - a port the switch doesn't have (a typo in `port`);
   - a link-aggregation member, whose write would take it out of its LAG,
@@ -12,7 +21,7 @@ FIXES (switch-port guardrails, homelab #517):
 
 ## 0.15.0
 
-FEATURES (client, homelab #516):
+FEATURES (client):
 - `tls_server_sha256` (`OMADA_TLS_SERVER_SHA256`) pins the controller's
   certificate by its SHA-256 fingerprint, so a self-signed controller no longer
   needs `tls_skip_verify`. `ca_cert_pem` (`OMADA_CA_CERT_PEM`) trusts a given CA
@@ -21,7 +30,7 @@ FEATURES (client, homelab #516):
   request; a controller that stopped answering used to hang the run and hold
   the state lock.
 
-FIXES (client, homelab #516):
+FIXES (client):
 - The access token is renewed before it expires, and once more when the
   controller rejects it (-44112/-44113 or HTTP 401), with the request retried.
   It used to be fetched once, so a run longer than its lifetime failed.
@@ -29,7 +38,7 @@ FIXES (client, homelab #516):
   status.
 
 
-FIXES (update semantics, homelab #515):
+FIXES (update semantics):
 - `omada_ssid`: settings left unset in config keep their live values on
   update. They were unknown on update and sent as hard-coded defaults, so a
   rename or PSK rotation switched 802.11r, MLO, hide-password and group-key
@@ -53,7 +62,7 @@ FIXES (update semantics, homelab #515):
   the profile with those protections off.
 
 
-FIXES (state accuracy, homelab #514):
+FIXES (state accuracy):
 - Objects deleted outside Terraform are now dropped from state, so the plan
   shows them. `omada_acl`, `omada_lan_network`, `omada_ssid` and
   `omada_wlan_group` kept the prior state instead, so a deleted deny rule,
@@ -88,10 +97,9 @@ FIXES:
   answered with a JSON error page (no `errorCode`) counted as success in
   `acl`, `lannetwork`, `ssid`, `wlangroup`, `firewallsetting`,
   `attackdefensesetting`, `switchport`, `switchportprofile` and `apwlangroup`,
-  so destroy dropped a live object from state (homelab #235).
+  so destroy dropped a live object from state.
 - `omada_sites`: a controller error (for example an expired token) crashed the
-  provider with a nil dereference; it is now reported as an error (homelab
-  #235).
+  provider with a nil dereference; it is now reported as an error.
 
 SECURITY:
 - Bump every module to its current release, including `omada-go-sdk` 0.5.0 →
@@ -99,12 +107,11 @@ SECURITY:
   `govulncheck` on 0.14.0 reported 12 reachable vulnerabilities (grpc, x/net,
   x/text, and the Go 1.25.8 standard library the release was built with); it
   now reports none. grpc is held at 1.83.2 because 1.84.0 is affected by
-  GO-2026-6443 and has no patched release (homelab #513).
+  GO-2026-6443 and has no patched release.
 
 CI:
 - New `govulncheck` job (pinned), a pinned golangci-lint, and the acceptance
-  suite also runs against OpenTofu, which is what the homelab uses (homelab
-  #513).
+  suite also runs against OpenTofu as well as Terraform.
 
 ## 0.14.0
 
@@ -113,7 +120,7 @@ FEATURES:
   gateway TCP/UDP port and port-range mappings. It supports physical/virtual WAN
   and WAN-IP selectors plus optional source-address restrictions. DMZ is
   deliberately excluded so an all-ports exposure cannot be represented as an
-  ordinary port-forwarding rule (homelab #80 / #199).
+  ordinary port-forwarding rule.
 
 ## 0.13.2
 
@@ -123,7 +130,7 @@ FIXES:
   `wlanId` (the same field the WLAN-group create returns), not any of the
   spellings v0.13.1 tried, so imported bindings still read back an empty
   `wlan_group_id`. With `wlanId` first in the candidate list a refresh now
-  self-heals the state and the baseline plans to a no-op (homelab #157).
+  self-heals the state and the baseline plans to a no-op.
 
 ## 0.13.1
 
@@ -134,7 +141,7 @@ FIXES:
   back with an empty `wlan_group_id` and an imported binding never planned to a
   no-op. The overview decode now scans candidate key spellings
   (`wlanGroupId`, `wlan group id`, …) and accepts only an id-shaped value (24-hex),
-  so a group *name* is never mistaken for its id (homelab #157).
+  so a group *name* is never mistaken for its id.
 
 ## 0.13.0
 
@@ -151,7 +158,7 @@ FEATURES:
   a no-op (an AP cannot be unbound; moving it "back" is a `wlan_group_id` change).
   Import id is `<site_id>/<ap_mac>`. This lets Git assert and drift-detect AP↔group
   bindings while keeping staged WLAN groups unbroadcast until an AP is explicitly
-  pointed at them (homelab #157).
+  pointed at them.
 
 ## 0.12.0
 
@@ -166,14 +173,14 @@ FIXES:
   compensated for the same key drift (v0.7.4); the write side now matches. On
   controller 5.15.x the write path was additionally blocked because GET omitted
   13 PATCH-required fields; on 6.2.10.18 GET and PATCH share the same schema, so
-  a full-object write round-trips (homelab #82).
+  a full-object write round-trips.
 
 ## 0.11.0
 
 FEATURES:
 - Added `omada_dhcp_reservation` resource: a MAC-keyed DHCP fixed-address
   reservation on a LAN network, with MAC normalization so out-of-band and
-  imported entries compare cleanly. Full CRUD + import (homelab #154).
+  imported entries compare cleanly. Full CRUD + import.
 
 ## 0.10.0
 
@@ -184,7 +191,7 @@ FEATURES:
   gateway ACL id, highest priority first — so an out-of-band or unlisted rule is
   rejected rather than silently reordered. Read reflects the live order (drift
   detection); Delete is a no-op (ordering is intrinsic); import is by `site_id`.
-  This is the building block for allow-before-deny policy (homelab #156).
+  This is the building block for allow-before-deny policy.
 
 ## 0.9.1
 
@@ -195,7 +202,7 @@ FIXES:
   null — tripping "Provider produced inconsistent result after apply" on create
   and drifting on every refresh. The description is now adopted from the API only
   when the read returns one, and is documented as not recoverable on bare import.
-  Found by the homelab live apply proof (homelab #155).
+  Found by a live apply against a 6.2 controller.
 
 ## 0.9.0
 
@@ -204,11 +211,11 @@ FEATURES:
   (Open API group profile, type 0) that gateway ACL rules reference by group id
   via `source_type`/`destination_type = 1` instead of hard-coding whole-VLAN
   networks. Full CRUD + import against the Open API v1 `profiles/groups` surface
-  (homelab #155).
+ .
 - Added `omada_ip_port_group` resource: a named set of IP hosts/subnets scoped
   to TCP/UDP ports (group profile type 1), referenced by ACLs via
   `source_type`/`destination_type = 2`. Supports both port-list (`port_type` 0)
-  and port-mask (`port_type` 1) modes. Full CRUD + import (homelab #155).
+  and port-mask (`port_type` 1) modes. Full CRUD + import.
 
 ## 0.8.0
 
@@ -216,12 +223,12 @@ FEATURES:
 - Added `omada_switch_port_profile` resource: a reusable switch (OSW) LAN/port
   profile defining a port's VLAN membership (native/untagged plus tagged =
   access vs trunk). Full CRUD + import against the Open API v1 `lan-profiles`
-  surface (homelab #153).
+  surface.
 - Added `omada_switch_port` resource: the per-port assignment on a managed
   switch (which profile a port uses, plus name, PoE mode, and admin state).
   Modeled as a singleton keyed by (site, switch MAC, port) — Create/Update apply
   via the per-port Modify endpoint, Read selects from the switch overview
-  portList, Delete is a no-op (a physical port cannot be removed) (homelab #153).
+  portList, Delete is a no-op (a physical port cannot be removed).
 
 ## 0.2.0
 

@@ -182,7 +182,7 @@ func TestAcc_AttackDefenseSettingResource(t *testing.T) {
 				),
 			},
 			// Leaving an optional limit unset keeps the live value: no change is
-			// planned (homelab #515). As plain Optional it planned 300 -> null.
+			// planned. As plain Optional it planned 300 -> null.
 			{
 				Config:   strings.Replace(config(true), "tcp_conn_limit         = 300\n", "", 1),
 				PlanOnly: true,

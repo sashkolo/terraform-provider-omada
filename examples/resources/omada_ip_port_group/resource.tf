@@ -6,7 +6,7 @@ variable "site_id" {
 
 # A reusable IP-Port group: IP hosts/subnets scoped to a set of service ports.
 # ACLs reference it by group id (source_type/destination_type = 2). Here: the
-# outdoor camera subnet restricted to the ONVIF/RTSP/HTTP(S) service ports, so a
+# camera subnet restricted to the ONVIF/RTSP/HTTP(S) service ports, so a
 # single allow rule can express "reach the cameras only on these ports".
 resource "omada_ip_port_group" "camera_service_ports" {
   site_id     = var.site_id
@@ -14,7 +14,7 @@ resource "omada_ip_port_group" "camera_service_ports" {
   description = "Camera ONVIF/RTSP/HTTP(S) service ports"
 
   ip_list = [
-    { ip = "192.168.30.0", mask = 24, description = "outdoor camera subnet" },
+    { ip = "192.168.100.0", mask = 24, description = "camera subnet" },
   ]
 
   # port_type defaults to 0 (port-list mode). Each entry is a single port or an

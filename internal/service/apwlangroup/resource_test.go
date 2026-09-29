@@ -27,8 +27,8 @@ func TestAcc_ApWlanGroupResource(t *testing.T) {
 
 	// 24-hex Omada object ids for the WLAN groups. The provider accepts only
 	// id-shaped values, so a group name would (correctly) not be read back.
-	const defaultGroup = "638ef75a73919c1e1734f77a"
-	const stagingGroup = "638ef75a73919c1e1734f88b"
+	const defaultGroup = "64b000000000000000000004"
+	const stagingGroup = "64b000000000000000000003"
 
 	// apRow is the mutable AP overview. The group is keyed under "wlanId" — the
 	// key the live controller (6.2.10.18) uses on GET /aps/{apMac}, not the SDK

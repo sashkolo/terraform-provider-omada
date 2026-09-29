@@ -24,9 +24,9 @@ type switchPortProfileClient struct {
 // so this resource deliberately uses v1.
 //
 // A profile with a native network and no tagged networks is an access port on
-// that VLAN; adding tagged networks makes it a trunk. Codifying the
-// Outdoor-Untrusted profile (native VLAN 30, zero tagged) is how the homelab
-// proves the outdoor cable stays access/untagged with no sensitive VLANs.
+// that VLAN; adding tagged networks makes it a trunk. Codifying an
+// access profile (one native VLAN, zero tagged) proves that a port exposed to
+// untrusted devices stays untagged and carries no other VLAN.
 type switchPortProfileResourceModel struct {
 	ProfileId            types.String `tfsdk:"profile_id"`
 	SiteId               types.String `tfsdk:"site_id"`

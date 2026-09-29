@@ -11,7 +11,7 @@ import (
 )
 
 // fakeSwitchController models the parts of the controller that state accuracy
-// depends on (homelab #514): a switch overview that answers -39050 ("This
+// depends on: a switch overview that answers -39050 ("This
 // device does not exist") once the switch is removed from the controller.
 type fakeSwitchController struct {
 	mu      sync.Mutex
@@ -38,9 +38,9 @@ func newFakeSwitchController(t *testing.T) (*fakeSwitchController, *acctest.Test
 			return
 		}
 		write(w, map[string]any{"errorCode": 0, "msg": "", "result": map[string]any{
-			"mac": "E4-FA-C4-9E-CD-87",
+			"mac": "00-00-5E-00-53-01",
 			"portList": []any{map[string]any{
-				"port": 8, "name": "Port8", "profileId": "test-profile-id", "profileName": "Outdoor-Untrusted",
+				"port": 8, "name": "Port8", "profileId": "test-profile-id", "profileName": "Untrusted",
 				"profileOverrideEnable": true, "poeMode": 1, "status": 1, "lagPort": false,
 			}},
 		}})
@@ -51,7 +51,7 @@ func newFakeSwitchController(t *testing.T) (*fakeSwitchController, *acctest.Test
 const stateTestSwitchPort = `
 resource "omada_switch_port" "test" {
 	site_id    = "test-site-id"
-	switch_mac = "E4-FA-C4-9E-CD-87"
+	switch_mac = "00-00-5E-00-53-01"
 	port       = 8
 	profile_id = "test-profile-id"
 }

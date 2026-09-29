@@ -20,12 +20,12 @@ func TestAcc_SwitchPortProfileResource(t *testing.T) {
 	mux := ts.Mux
 
 	// listRow is the single row returned by the paged LAN-profile list endpoint.
-	// It models an access/untagged Outdoor-Untrusted profile: a native VLAN and
+	// It models an access/untagged Untrusted profile: a native VLAN and
 	// zero tagged networks.
 	listRow := map[string]any{
 		"id":                   "test-profile-id",
-		"name":                 "Outdoor-Untrusted",
-		"nativeNetworkId":      "net-outdoor",
+		"name":                 "Untrusted",
+		"nativeNetworkId":      "net-untrusted",
 		"tagNetworkIds":        []any{},
 		"untagNetworkIds":      []any{},
 		"poe":                  int32(2),
@@ -101,8 +101,8 @@ func TestAcc_SwitchPortProfileResource(t *testing.T) {
 				Config: ts.ProviderConfig + `
 				resource "omada_switch_port_profile" "test" {
 					site_id            = "test-site-id"
-					name               = "Outdoor-Untrusted"
-					native_network_id  = "net-outdoor"
+					name               = "Untrusted"
+					native_network_id  = "net-untrusted"
 					tagged_network_ids = []
 					port_isolation_enable  = false
 					lldp_med_enable        = true
@@ -113,8 +113,8 @@ func TestAcc_SwitchPortProfileResource(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("omada_switch_port_profile.test", "profile_id", "test-profile-id"),
 					resource.TestCheckResourceAttr("omada_switch_port_profile.test", "site_id", "test-site-id"),
-					resource.TestCheckResourceAttr("omada_switch_port_profile.test", "name", "Outdoor-Untrusted"),
-					resource.TestCheckResourceAttr("omada_switch_port_profile.test", "native_network_id", "net-outdoor"),
+					resource.TestCheckResourceAttr("omada_switch_port_profile.test", "name", "Untrusted"),
+					resource.TestCheckResourceAttr("omada_switch_port_profile.test", "native_network_id", "net-untrusted"),
 					resource.TestCheckResourceAttr("omada_switch_port_profile.test", "tagged_network_ids.#", "0"),
 					resource.TestCheckResourceAttr("omada_switch_port_profile.test", "untagged_network_ids.#", "0"),
 					resource.TestCheckResourceAttr("omada_switch_port_profile.test", "poe", "2"),
@@ -137,8 +137,8 @@ func TestAcc_SwitchPortProfileResource(t *testing.T) {
 				Config: ts.ProviderConfig + `
 				resource "omada_switch_port_profile" "test" {
 					site_id            = "test-site-id"
-					name               = "Outdoor-Untrusted-2"
-					native_network_id  = "net-outdoor"
+					name               = "Untrusted-2"
+					native_network_id  = "net-untrusted"
 					tagged_network_ids = []
 					port_isolation_enable  = false
 					lldp_med_enable        = true
@@ -147,7 +147,7 @@ func TestAcc_SwitchPortProfileResource(t *testing.T) {
 				}
 				`,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("omada_switch_port_profile.test", "name", "Outdoor-Untrusted-2"),
+					resource.TestCheckResourceAttr("omada_switch_port_profile.test", "name", "Untrusted-2"),
 				),
 			},
 		},

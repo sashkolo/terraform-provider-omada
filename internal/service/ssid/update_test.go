@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
-// An edit must not reset settings the config leaves unset (homelab #515). On
+// An edit must not reset settings the config leaves unset. On
 // 0.14.0 the unset Optional+Computed attributes were unknown on update and the
 // provider sent hard-coded defaults, so renaming an SSID (or rotating its PSK)
 // switched 802.11r, MLO and group-key rekey off; autoWanAccess, which the

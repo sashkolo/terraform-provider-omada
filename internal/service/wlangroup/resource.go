@@ -150,7 +150,7 @@ func (r *wlanGroupResource) Create(ctx context.Context, req resource.CreateReque
 	if !awaitReadWlanGroup(ctx, &resp.Diagnostics, r, &plan) {
 		// The group exists on the controller: keep it in state (tainted) rather
 		// than orphaning it, so a re-apply replaces it instead of failing on a
-		// duplicate name (homelab #514).
+		// duplicate name.
 		resp.Diagnostics.Append(tfstate.SaveCreated(ctx, req.Plan, &resp.State, "wlan_group_id", plan.WlanId.ValueString())...)
 		resp.Diagnostics.AddError(
 			"Error creating WLAN group",
@@ -182,7 +182,7 @@ func (r *wlanGroupResource) Read(ctx context.Context, req resource.ReadRequest, 
 	if !found {
 		// Deleted outside Terraform. Setting nothing would keep the prior state,
 		// which the framework pre-fills, so the group would silently stay
-		// "managed" (homelab #514).
+		// "managed".
 		resp.State.RemoveResource(ctx)
 		return
 	}
@@ -252,7 +252,7 @@ func (r *wlanGroupResource) Delete(ctx context.Context, req resource.DeleteReque
 	// A rejected delete of a group that is already gone is the desired end
 	// state. The controller answers a missing group with -1001, which is also
 	// its generic "invalid request parameters", so a code alone once dropped a
-	// live group from state; confirm against the list instead (homelab #514).
+	// live group from state; confirm against the list instead.
 	if env.HasError() {
 		var listDiags diag.Diagnostics
 		if _, found := findWlanGroupConfirmed(ctx, &listDiags, r, &state); !listDiags.HasError() && !found {

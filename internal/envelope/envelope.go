@@ -10,8 +10,7 @@
 // Decode is deliberately strict about what counts as success: the Open API
 // always answers with an errorCode, so a body without one, or any HTTP error
 // status, is an error even when the body parses. Treating either as success
-// once let a failed DELETE report success and drop a live object from state
-// (homelab #235).
+// once let a failed DELETE report success and drop a live object from state.
 package envelope
 
 import (

@@ -1,2 +1,2 @@
 # An IP-Port group is imported as <site_id>/<group_id>.
-terraform import omada_ip_port_group.camera_service_ports 638ef75473919c1e1734f763/67bf02ec4bb93a16f2eb3369
+terraform import omada_ip_port_group.camera_service_ports 64b000000000000000000001/64b000000000000000000005

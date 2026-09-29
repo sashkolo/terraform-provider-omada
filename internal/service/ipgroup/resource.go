@@ -21,7 +21,7 @@ import (
 
 // errGroupNotFound codes mark a missing group profile. Delete treats them as a
 // successful outcome (the group is already gone), matching how the other
-// homelab resources tolerate not-found on delete. Both codes mean "this group
+// resources in this provider tolerate not-found on delete. Both codes mean "this group
 // does not exist" in the Open API error table.
 var errGroupNotFound = map[int32]bool{
 	-33703: true,
@@ -171,7 +171,7 @@ func (r *ipGroupResource) Create(ctx context.Context, req resource.CreateRequest
 	if !awaitReadGroup(ctx, &resp.Diagnostics, r, &plan) {
 		// The group exists on the controller: keep it in state (tainted) with
 		// the id the POST returned rather than a null id, which an ACL would
-		// reference as a null element (homelab #514).
+		// reference as a null element.
 		resp.Diagnostics.Append(tfstate.SaveCreated(ctx, req.Plan, &resp.State, "group_id", plan.GroupId.ValueString())...)
 		resp.Diagnostics.AddError(
 			"Error creating IP group",
@@ -270,7 +270,7 @@ func (r *ipGroupResource) Delete(ctx context.Context, req resource.DeleteRequest
 	// error so the operator removes the reference first.
 	if env.HasError() && !errGroupNotFound[env.Code()] {
 		// Any other controller error is still success when a confirmed re-list
-		// shows the group absent (homelab #514); a referenced group stays listed.
+		// shows the group absent; a referenced group stays listed.
 		var listDiags diag.Diagnostics
 		if _, found := findGroupConfirmed(ctx, &listDiags, r, &state); !listDiags.HasError() && !found {
 			return
@@ -365,8 +365,8 @@ const goneConfirmations = 3
 
 // awaitReadGroup retries the list read until the group is present, refreshing
 // the model in place. It never clears group_id: Create and Update already know
-// the id, and a null id would reach any ACL that references the group (homelab
-// #514). Only the last attempt's diagnostics are kept.
+// the id, and a null id would reach any ACL that references the group.
+// Only the last attempt's diagnostics are kept.
 func awaitReadGroup(ctx context.Context, diags *diag.Diagnostics, r *ipGroupResource, model *ipGroupResourceModel) bool {
 	ok, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {
 		if row := findGroupInList(ctx, d, r, model); row != nil {

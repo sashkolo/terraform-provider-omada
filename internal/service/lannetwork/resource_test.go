@@ -25,7 +25,7 @@ func TestAcc_LanNetworkResource(t *testing.T) {
 		"gatewaySubnet":   "192.168.199.1/24",
 		"domain":          "probe.local",
 		"igmpSnoopEnable": false,
-		"interfaceIds":    []string{"4_a4a0ba6187b44f0189b28f976417aadc"},
+		"interfaceIds":    []string{"4_64b00000000000000000000000000006"},
 		"dhcpSettingsVO": map[string]any{
 			"enable":      true,
 			"dhcpns":      "manual",
@@ -114,7 +114,7 @@ func TestAcc_LanNetworkResource(t *testing.T) {
 					vlan_id        = 999
 					gateway_subnet = "192.168.199.1/24"
 					domain         = "probe.local"
-					interface_ids  = ["4_a4a0ba6187b44f0189b28f976417aadc"]
+					interface_ids  = ["4_64b00000000000000000000000000006"]
 
 					dhcp_settings = {
 						enable      = true
@@ -137,7 +137,7 @@ func TestAcc_LanNetworkResource(t *testing.T) {
 					resource.TestCheckResourceAttr("omada_lan_network.test", "gateway_subnet", "192.168.199.1/24"),
 					resource.TestCheckResourceAttr("omada_lan_network.test", "domain", "probe.local"),
 					resource.TestCheckResourceAttr("omada_lan_network.test", "interface_ids.#", "1"),
-					resource.TestCheckResourceAttr("omada_lan_network.test", "interface_ids.0", "4_a4a0ba6187b44f0189b28f976417aadc"),
+					resource.TestCheckResourceAttr("omada_lan_network.test", "interface_ids.0", "4_64b00000000000000000000000000006"),
 					resource.TestCheckResourceAttr("omada_lan_network.test", "dhcp_settings.leasetime", "1440"),
 					resource.TestCheckResourceAttr("omada_lan_network.test", "dhcp_settings.ipaddr_start", "192.168.199.100"),
 				),
@@ -159,7 +159,7 @@ func TestAcc_LanNetworkResource(t *testing.T) {
 					vlan_id        = 999
 					gateway_subnet = "192.168.199.1/24"
 					domain         = "probe.local"
-					interface_ids  = ["4_a4a0ba6187b44f0189b28f976417aadc"]
+					interface_ids  = ["4_64b00000000000000000000000000006"]
 
 					dhcp_settings = {
 						enable      = true

@@ -13,7 +13,7 @@ import (
 )
 
 // fakeLanController models the parts of the controller that state accuracy
-// depends on (homelab #514): a list that is the only way to read a network, a
+// depends on: a list that is the only way to read a network, a
 // DELETE that fails when the network is already gone, and switches to delete a
 // network behind Terraform's back, hide it from lists, or omit the id from the
 // create result.
@@ -123,9 +123,9 @@ func (f *fakeLanController) setHidden(v bool) {
 const stateTestLanNetwork = `
 resource "omada_lan_network" "test" {
 	site_id        = "test-site-id"
-	name           = "Outdoor-Untrusted"
+	name           = "Untrusted"
 	vlan_id        = 40
-	gateway_subnet = "192.168.40.1/24"
+	gateway_subnet = "192.168.120.1/24"
 	interface_ids  = ["port-1"]
 }
 `

@@ -12,8 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
-// fakeSwitch models the homelab's main switch as the live controller reports
-// it (read-only probe, 2026-09-29): uplink and AP ports on the "All" trunk
+// fakeSwitch models a switch as a live 6.2 controller reports it: uplink and AP ports on the "All" trunk
 // profile (type 0), access ports on single-VLAN profiles (type 2). Port 3 is a
 // LAG member here to exercise that guard.
 type fakeSwitch struct {
@@ -47,7 +46,7 @@ func newFakeSwitch(t *testing.T) (*fakeSwitch, *acctest.TestServer) {
 		write(w, map[string]any{"errorCode": 0, "msg": "", "result": map[string]any{"data": []any{
 			map[string]any{"id": "prof-all", "name": "All", "type": 0, "tagNetworkIds": []string{"n1", "n2", "n3", "n4"}},
 			map[string]any{"id": "prof-personal", "name": "Personal", "type": 2, "tagNetworkIds": []string{}},
-			map[string]any{"id": "prof-outdoor", "name": "Outdoor-Untrusted", "type": 2, "tagNetworkIds": []string{}},
+			map[string]any{"id": "prof-untrusted", "name": "Untrusted", "type": 2, "tagNetworkIds": []string{}},
 		}}})
 	})
 	ts.Mux.HandleFunc("PATCH /openapi/v1/{omadacId}/sites/{siteId}/switches/{switchMac}/ports/{port}", func(w http.ResponseWriter, r *http.Request) {
@@ -60,8 +59,8 @@ func newFakeSwitch(t *testing.T) (*fakeSwitch, *acctest.TestServer) {
 		f.patches++
 		if row, ok := f.ports[port]; ok {
 			row["profileId"] = body["profileId"]
-			if body["profileId"] == "prof-outdoor" {
-				row["profileName"] = "Outdoor-Untrusted"
+			if body["profileId"] == "prof-untrusted" {
+				row["profileName"] = "Untrusted"
 			}
 		}
 		write(w, map[string]any{"errorCode": 0, "msg": "Success."})
@@ -73,9 +72,9 @@ func portConfig(ts *acctest.TestServer, port int, extra string) string {
 	return ts.ProviderConfig + fmt.Sprintf(`
 resource "omada_switch_port" "test" {
 	site_id    = "test-site-id"
-	switch_mac = "E4-FA-C4-9E-CD-87"
+	switch_mac = "00-00-5E-00-53-01"
 	port       = %d
-	profile_id = "prof-outdoor"
+	profile_id = "prof-untrusted"
 	%s
 }
 `, port, extra)
@@ -90,7 +89,7 @@ func (f *fakeSwitch) assertNoWrites(t *testing.T) {
 	}
 }
 
-// A typo in `port` must fail before anything is written (homelab #517).
+// A typo in `port` must fail before anything is written.
 func TestAcc_SwitchPortGuardUnknownPort(t *testing.T) {
 	f, ts := newFakeSwitch(t)
 	resource.Test(t, resource.TestCase{
@@ -124,7 +123,7 @@ func TestAcc_SwitchPortGuardTrunkPortAllowed(t *testing.T) {
 		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
 		Steps: []resource.TestStep{{
 			Config: portConfig(ts, 1, "allow_trunk_reassign = true"),
-			Check:  resource.TestCheckResourceAttr("omada_switch_port.test", "profile_id", "prof-outdoor"),
+			Check:  resource.TestCheckResourceAttr("omada_switch_port.test", "profile_id", "prof-untrusted"),
 		}},
 	})
 }
@@ -143,14 +142,14 @@ func TestAcc_SwitchPortGuardLagMember(t *testing.T) {
 	f.assertNoWrites(t)
 }
 
-// An access port moves freely, as port 8 did for the homelab (#153).
+// An access port moves freely, such as port 8 here.
 func TestAcc_SwitchPortGuardAccessPort(t *testing.T) {
 	_, ts := newFakeSwitch(t)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
 		Steps: []resource.TestStep{{
 			Config: portConfig(ts, 8, ""),
-			Check:  resource.TestCheckResourceAttr("omada_switch_port.test", "profile_id", "prof-outdoor"),
+			Check:  resource.TestCheckResourceAttr("omada_switch_port.test", "profile_id", "prof-untrusted"),
 		}},
 	})
 }

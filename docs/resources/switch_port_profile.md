@@ -22,15 +22,15 @@ variable "site_id" {
 # An access/untagged switch port profile on a single VLAN: a native network and
 # zero tagged networks. This is the shape used to keep an exposed port pinned to
 # one untrusted VLAN with no trunked/sensitive VLANs.
-resource "omada_switch_port_profile" "outdoor_untrusted" {
+resource "omada_switch_port_profile" "untrusted" {
   site_id            = var.site_id
-  name               = "Outdoor-Untrusted"
-  native_network_id  = "<outdoor-lan-network-id>" # VLAN this profile pins ports to
-  tagged_network_ids = []                         # access port: no trunked VLANs
+  name               = "Untrusted"
+  native_network_id  = "<untrusted-lan-network-id>" # VLAN this profile pins ports to
+  tagged_network_ids = []                           # access port: no trunked VLANs
 }
 
-output "outdoor_untrusted_profile_id" {
-  value = omada_switch_port_profile.outdoor_untrusted.profile_id
+output "untrusted_profile_id" {
+  value = omada_switch_port_profile.untrusted.profile_id
 }
 ```
 
@@ -69,5 +69,5 @@ The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/c
 
 ```shell
 # A switch port profile is imported as <site_id>/<profile_id>.
-terraform import omada_switch_port_profile.outdoor_untrusted 638ef75473919c1e1734f763/67bf02ec4bb93a16f2eb3369
+terraform import omada_switch_port_profile.untrusted 64b000000000000000000001/64b000000000000000000005
 ```
