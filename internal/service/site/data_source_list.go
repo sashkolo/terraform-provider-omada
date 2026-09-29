@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"terraform-provider-omada/internal/client"
+	"terraform-provider-omada/internal/envelope"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -133,6 +134,23 @@ func (d *sitesDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 			"Unable to Read Omada Sites",
 			err.Error(),
 		)
+		return
+	}
+
+	// The SDK decodes an error envelope ({errorCode, msg} with no result, for
+	// example an expired token) without error, so check the envelope before
+	// touching Result; dereferencing it crashed the provider (homelab #235).
+	if response == nil || response.ErrorCode == nil {
+		resp.Diagnostics.AddError("Unable to Read Omada Sites",
+			"Controller response has no errorCode; it is not an Open API answer.")
+		return
+	}
+	if *response.ErrorCode != 0 {
+		envelope.AddAPIError(&resp.Diagnostics, "reading Omada sites", response.ErrorCode, response.GetMsg())
+		return
+	}
+	if response.Result == nil {
+		resp.Diagnostics.AddError("Unable to Read Omada Sites", "Controller returned success with no result.")
 		return
 	}
 

@@ -4,11 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strconv"
 	"strings"
 	"terraform-provider-omada/internal/client"
+	"terraform-provider-omada/internal/envelope"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -147,54 +146,17 @@ func (r *switchPortResource) Schema(_ context.Context, _ resource.SchemaRequest,
 	}
 }
 
-// decodeEnvelope reads the (re-readable) response body from an SDK call and
-// decodes the standard Omada envelope leniently. This sidesteps the SDK's strict
-// per-model decoders (which reject fields the controller returns that the SDK
-// model does not know) and recovers the controller's errorCode/msg.
-func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnostics, action string) (omadaEnvelope, bool) {
-	if callErr != nil && httpResp == nil {
-		diags.AddError("Error "+action, "Transport error: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-	if httpResp == nil {
-		diags.AddError("Error "+action, "Controller returned no response.")
-		return omadaEnvelope{}, false
-	}
-	defer httpResp.Body.Close()
-
-	body, readErr := io.ReadAll(httpResp.Body)
-	if readErr != nil {
-		diags.AddError("Error "+action, "Could not read response body: "+readErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	var env omadaEnvelope
-	if jsonErr := json.Unmarshal(body, &env); jsonErr != nil {
-		msg := "Could not decode response: " + jsonErr.Error()
-		if callErr != nil {
-			// The controller likely returned a non-JSON body (HTML error page,
-			// empty body) alongside an HTTP/transport error; surface it so the
-			// real status code is not lost behind a generic parse error.
-			msg += fmt.Sprintf(" (original error: %s)", callErr.Error())
-		}
-		diags.AddError("Error "+action, msg)
-		return omadaEnvelope{}, false
-	}
-
-	return env, true
-}
-
 // modifyPort applies the plan to the live port via the per-port Modify endpoint.
 func (r *switchPortResource) modifyPort(ctx context.Context, diags *diag.Diagnostics, plan switchPortResourceModel, action string) bool {
 	port := strconv.FormatInt(int64(plan.Port.ValueInt32()), 10)
 	_, httpResp, callErr := r.client.SwitchAPI.ModifySwitchPort(ctx, r.omadacId, plan.SiteId.ValueString(), plan.SwitchMac.ValueString(), port).
 		OswPortSettingVO(expandPort(plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, diags, action)
+	env, ok := envelope.Decode(httpResp, callErr, diags, action)
 	if !ok {
 		return false
 	}
-	if env.hasError() {
-		respondAPIError(diags, action, env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(diags, action, env.ErrorCode, env.Msg)
 		return false
 	}
 	return true
@@ -322,11 +284,11 @@ func (r *switchPortResource) ImportState(ctx context.Context, req resource.Impor
 // switch is gone), it clears model.ProfileId so the caller can drop the resource.
 func readPort(ctx context.Context, diags *diag.Diagnostics, r *switchPortResource, model *switchPortResourceModel) bool {
 	_, httpResp, callErr := r.client.SwitchAPI.GetSwitchInfo(ctx, r.omadacId, model.SiteId.ValueString(), model.SwitchMac.ValueString()).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, diags, "reading switch port")
+	env, ok := envelope.Decode(httpResp, callErr, diags, "reading switch port")
 	if !ok {
 		return false
 	}
-	if env.hasError() {
+	if env.HasError() {
 		diags.AddError(
 			"Error reading switch port",
 			fmt.Sprintf("Controller rejected the switch read for %s, error code %d: %s", model.SwitchMac.ValueString(), *env.ErrorCode, env.Msg),
@@ -351,18 +313,4 @@ func readPort(ctx context.Context, diags *diag.Diagnostics, r *switchPortResourc
 	// Port not present: the switch is gone upstream.
 	model.ProfileId = types.StringNull()
 	return true
-}
-
-// respondAPIError records a controller-side error (non-zero errorCode) on the
-// given diagnostics.
-func respondAPIError(diags *diag.Diagnostics, action string, code *int32, msg string) {
-	if code == nil {
-		diags.AddError("Error "+action, "Controller rejected the request: "+msg)
-		return
-	}
-
-	diags.AddError(
-		"Error "+action,
-		fmt.Sprintf("Controller rejected the request, error code %d: %s", *code, msg),
-	)
 }

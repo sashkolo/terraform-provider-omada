@@ -4,10 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"terraform-provider-omada/internal/client"
+	"terraform-provider-omada/internal/envelope"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -128,48 +127,6 @@ func (r *ipGroupResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 	}
 }
 
-// decodeEnvelope reads the (re-readable) response body from an SDK call and
-// decodes the standard Omada envelope leniently. This sidesteps the SDK's strict
-// per-model decoders (which reject fields the controller returns that the SDK
-// model does not know) and recovers the controller's errorCode/msg.
-func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnostics, action string) (omadaEnvelope, bool) {
-	if callErr != nil && httpResp == nil {
-		diags.AddError("Error "+action, "Transport error: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-	if httpResp == nil {
-		diags.AddError("Error "+action, "Controller returned no response.")
-		return omadaEnvelope{}, false
-	}
-	defer httpResp.Body.Close()
-
-	body, readErr := io.ReadAll(httpResp.Body)
-	if readErr != nil {
-		diags.AddError("Error "+action, "Could not read response body: "+readErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	var env omadaEnvelope
-	if jsonErr := json.Unmarshal(body, &env); jsonErr != nil {
-		msg := "Could not decode response: " + jsonErr.Error()
-		if callErr != nil {
-			msg += fmt.Sprintf(" (original error: %s)", callErr.Error())
-		}
-		diags.AddError("Error "+action, msg)
-		return omadaEnvelope{}, false
-	}
-
-	// A transport/HTTP error (non-2xx) whose body decoded but carries no
-	// errorCode (e.g. a reverse-proxy error page shaped as JSON) would otherwise
-	// slip past hasError() and be treated as success; surface it instead.
-	if callErr != nil && env.ErrorCode == nil {
-		diags.AddError("Error "+action, "API call failed: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	return env, true
-}
-
 // Create creates the resource and sets the initial Terraform state.
 func (r *ipGroupResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan ipGroupResourceModel
@@ -181,12 +138,12 @@ func (r *ipGroupResource) Create(ctx context.Context, req resource.CreateRequest
 
 	_, httpResp, callErr := r.client.ProfilesAPI.CreateGroupProfile(ctx, r.omadacId, plan.SiteId.ValueString()).
 		CreateGroupOpenApiVO(expandGroup(plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "creating IP group")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "creating IP group")
 	if !ok {
 		return
 	}
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "creating IP group", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "creating IP group", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -263,12 +220,12 @@ func (r *ipGroupResource) Update(ctx context.Context, req resource.UpdateRequest
 
 	_, httpResp, callErr := r.client.ProfilesAPI.ModifyGroupProfile(ctx, r.omadacId, plan.SiteId.ValueString(), groupTypeIP, plan.GroupId.ValueString()).
 		CreateGroupOpenApiVO(expandGroup(plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "updating IP group")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "updating IP group")
 	if !ok {
 		return
 	}
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "updating IP group", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "updating IP group", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -290,7 +247,7 @@ func (r *ipGroupResource) Delete(ctx context.Context, req resource.DeleteRequest
 	}
 
 	_, httpResp, callErr := r.client.ProfilesAPI.DeleteGroupProfile(ctx, r.omadacId, state.SiteId.ValueString(), state.GroupId.ValueString(), groupTypeIP).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "deleting IP group")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "deleting IP group")
 	if !ok {
 		return
 	}
@@ -299,8 +256,8 @@ func (r *ipGroupResource) Delete(ctx context.Context, req resource.DeleteRequest
 	// already gone, which is the desired end state. The controller also rejects
 	// deleting a group still referenced by an ACL (-33717); surface that as an
 	// error so the operator removes the reference first.
-	if env.hasError() && env.ErrorCode != nil && !errGroupNotFound[*env.ErrorCode] {
-		respondAPIError(&resp.Diagnostics, "deleting IP group", env.ErrorCode, env.Msg)
+	if env.HasError() && env.ErrorCode != nil && !errGroupNotFound[*env.ErrorCode] {
+		envelope.AddAPIError(&resp.Diagnostics, "deleting IP group", env.ErrorCode, env.Msg)
 		return
 	}
 }
@@ -327,12 +284,12 @@ func (r *ipGroupResource) ImportState(ctx context.Context, req resource.ImportSt
 // JSON array under `result` (no {data} paging wrapper).
 func fetchGroupList(ctx context.Context, diags *diag.Diagnostics, r *ipGroupResource, model *ipGroupResourceModel) []groupReadRow {
 	_, httpResp, callErr := r.client.ProfilesAPI.GetGroupProfilesByType(ctx, r.omadacId, model.SiteId.ValueString(), groupTypeIP).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, diags, "reading IP group")
+	env, ok := envelope.Decode(httpResp, callErr, diags, "reading IP group")
 	if !ok {
 		return nil
 	}
 
-	if env.hasError() {
+	if env.HasError() {
 		diags.AddError(
 			"Error reading IP group",
 			fmt.Sprintf("Controller rejected the list for site %s, error code %d: %s", model.SiteId.ValueString(), *env.ErrorCode, env.Msg),
@@ -393,18 +350,4 @@ func readGroup(ctx context.Context, diags *diag.Diagnostics, r *ipGroupResource,
 	// Not present in the list: the group is gone upstream.
 	model.GroupId = types.StringNull()
 	return true
-}
-
-// respondAPIError records a controller-side error (non-zero errorCode) on the
-// given diagnostics.
-func respondAPIError(diags *diag.Diagnostics, action string, code *int32, msg string) {
-	if code == nil {
-		diags.AddError("Error "+action, "Controller rejected the request: "+msg)
-		return
-	}
-
-	diags.AddError(
-		"Error "+action,
-		fmt.Sprintf("Controller rejected the request, error code %d: %s", *code, msg),
-	)
 }

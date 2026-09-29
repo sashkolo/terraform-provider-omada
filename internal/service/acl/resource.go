@@ -4,10 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"terraform-provider-omada/internal/client"
+	"terraform-provider-omada/internal/envelope"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -207,39 +206,6 @@ func (r *aclResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *
 	}
 }
 
-// decodeEnvelope reads the (re-readable) response body from an SDK call and
-// decodes the standard Omada envelope leniently. This sidesteps the SDK's strict
-// per-model decoders (which reject fields the controller returns that the SDK
-// model does not know) and recovers the controller's errorCode/msg.
-func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnostics, action string) (omadaEnvelope, bool) {
-	if callErr != nil && httpResp == nil {
-		diags.AddError("Error "+action, "Transport error: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-	if httpResp == nil {
-		diags.AddError("Error "+action, "Controller returned no response.")
-		return omadaEnvelope{}, false
-	}
-	// The generated SDK already drains + NopCloser-rewraps Body before returning
-	// it, so Close() here is a defensive no-op; kept for hygiene and robustness
-	// against future SDK changes.
-	defer httpResp.Body.Close()
-
-	body, readErr := io.ReadAll(httpResp.Body)
-	if readErr != nil {
-		diags.AddError("Error "+action, "Could not read response body: "+readErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	var env omadaEnvelope
-	if jsonErr := json.Unmarshal(body, &env); jsonErr != nil {
-		diags.AddError("Error "+action, "Could not decode response: "+jsonErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	return env, true
-}
-
 // Create creates the resource and sets the initial Terraform state.
 func (r *aclResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan aclResourceModel
@@ -251,13 +217,13 @@ func (r *aclResource) Create(ctx context.Context, req resource.CreateRequest, re
 
 	_, httpResp, callErr := r.client.ACLAPI.CreateOsgAcl(ctx, r.omadacId, plan.SiteId.ValueString()).
 		GatewayACLConfig(expandGatewayACL(plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "creating ACL")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "creating ACL")
 	if !ok {
 		return
 	}
 
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "creating ACL", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "creating ACL", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -342,13 +308,13 @@ func (r *aclResource) Update(ctx context.Context, req resource.UpdateRequest, re
 
 	_, httpResp, callErr := r.client.ACLAPI.ModifyOsgAcl(ctx, r.omadacId, plan.SiteId.ValueString(), plan.AclId.ValueString()).
 		GatewayACLConfig(expandGatewayACL(plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "updating ACL")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "updating ACL")
 	if !ok {
 		return
 	}
 
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "updating ACL", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "updating ACL", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -370,7 +336,7 @@ func (r *aclResource) Delete(ctx context.Context, req resource.DeleteRequest, re
 	}
 
 	_, httpResp, callErr := r.client.ACLAPI.DeleteAcl(ctx, r.omadacId, state.SiteId.ValueString(), state.AclId.ValueString()).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "deleting ACL")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "deleting ACL")
 	if !ok {
 		return
 	}
@@ -381,8 +347,8 @@ func (r *aclResource) Delete(ctx context.Context, req resource.DeleteRequest, re
 	// refresh and destroy. The exact not-found code is controller-dependent;
 	// treat any non-zero code as an error for now and refine once confirmed
 	// against the live controller.
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "deleting ACL", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "deleting ACL", env.ErrorCode, env.Msg)
 		return
 	}
 }
@@ -409,12 +375,12 @@ func (r *aclResource) ImportState(ctx context.Context, req resource.ImportStateR
 func fetchAclList(ctx context.Context, diags *diag.Diagnostics, r *aclResource, model *aclResourceModel) []aclReadRow {
 	_, httpResp, callErr := r.client.ACLAPI.GetOsgAclList(ctx, r.omadacId, model.SiteId.ValueString()).
 		Page(1).PageSize(1000).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, diags, "reading ACL")
+	env, ok := envelope.Decode(httpResp, callErr, diags, "reading ACL")
 	if !ok {
 		return nil
 	}
 
-	if env.hasError() {
+	if env.HasError() {
 		diags.AddError(
 			"Error reading ACL",
 			fmt.Sprintf("Controller rejected the list for site %s, error code %d: %s", model.SiteId.ValueString(), *env.ErrorCode, env.Msg),
@@ -516,18 +482,4 @@ func runWithBackoff(ctx context.Context, fn func() bool) bool {
 		}
 	}
 	return false
-}
-
-// respondAPIError records a controller-side error (non-zero errorCode) on the
-// given diagnostics.
-func respondAPIError(diags *diag.Diagnostics, action string, code *int32, msg string) {
-	if code == nil {
-		diags.AddError("Error "+action, "Controller rejected the request: "+msg)
-		return
-	}
-
-	diags.AddError(
-		"Error "+action,
-		fmt.Sprintf("Controller rejected the request, error code %d: %s", *code, msg),
-	)
 }

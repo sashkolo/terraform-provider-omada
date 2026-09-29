@@ -1,5 +1,17 @@
 ## Unreleased
 
+FIXES:
+- One shared envelope decoder (`internal/envelope`) replaces the 14 per-resource
+  copies. A response without an `errorCode`, whatever its HTTP status, and an
+  HTTP error status with `errorCode` 0 are now errors. Before, a failed DELETE
+  answered with a JSON error page (no `errorCode`) counted as success in
+  `acl`, `lannetwork`, `ssid`, `wlangroup`, `firewallsetting`,
+  `attackdefensesetting`, `switchport`, `switchportprofile` and `apwlangroup`,
+  so destroy dropped a live object from state (homelab #235).
+- `omada_sites`: a controller error (for example an expired token) crashed the
+  provider with a nil dereference; it is now reported as an error (homelab
+  #235).
+
 FEATURES:
 - Added `omada_port_forwarding`, a full CRUD/import resource for explicit
   gateway TCP/UDP port and port-range mappings. It supports physical/virtual WAN

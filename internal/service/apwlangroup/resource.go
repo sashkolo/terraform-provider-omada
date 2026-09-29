@@ -2,12 +2,10 @@ package apwlangroup
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"terraform-provider-omada/internal/client"
+	"terraform-provider-omada/internal/envelope"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -109,43 +107,6 @@ func (r *apWlanGroupResource) Schema(_ context.Context, _ resource.SchemaRequest
 	}
 }
 
-// decodeEnvelope reads the (re-readable) response body from an SDK call and
-// decodes the standard Omada envelope leniently. This sidesteps the SDK's strict
-// per-model decoders (which reject fields the controller returns that the SDK
-// model does not know) and recovers the controller's errorCode/msg.
-func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnostics, action string) (omadaEnvelope, bool) {
-	if callErr != nil && httpResp == nil {
-		diags.AddError("Error "+action, "Transport error: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-	if httpResp == nil {
-		diags.AddError("Error "+action, "Controller returned no response.")
-		return omadaEnvelope{}, false
-	}
-	defer httpResp.Body.Close()
-
-	body, readErr := io.ReadAll(httpResp.Body)
-	if readErr != nil {
-		diags.AddError("Error "+action, "Could not read response body: "+readErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	var env omadaEnvelope
-	if jsonErr := json.Unmarshal(body, &env); jsonErr != nil {
-		msg := "Could not decode response: " + jsonErr.Error()
-		if callErr != nil {
-			// The controller likely returned a non-JSON body (HTML error page,
-			// empty body) alongside an HTTP/transport error; surface it so the
-			// real status code is not lost behind a generic parse error.
-			msg += fmt.Sprintf(" (original error: %s)", callErr.Error())
-		}
-		diags.AddError("Error "+action, msg)
-		return omadaEnvelope{}, false
-	}
-
-	return env, true
-}
-
 // switchGroup switches the AP to the planned WLAN group via the per-AP
 // wlan-group PATCH — but only when the AP is not already on that group, because
 // the controller rejects a switch to the current group ("cannot be the current
@@ -175,12 +136,12 @@ func (r *apWlanGroupResource) switchGroup(ctx context.Context, diags *diag.Diagn
 
 	_, httpResp, callErr := r.client.ApAPI.ModifyApWlanGroup(ctx, r.omadacId, plan.SiteId.ValueString(), plan.ApMac.ValueString()).
 		ApUpdateWlanGroupOpenApiVO(expandSwitch(*plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, diags, action)
+	env, ok := envelope.Decode(httpResp, callErr, diags, action)
 	if !ok {
 		return false, false
 	}
-	if env.hasError() {
-		respondAPIError(diags, action, env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(diags, action, env.ErrorCode, env.Msg)
 		return false, false
 	}
 	return true, true
@@ -313,19 +274,19 @@ func (r *apWlanGroupResource) ImportState(ctx context.Context, req resource.Impo
 // on the model in place. site_id and ap_mac are preserved (they key the read).
 func readOverview(ctx context.Context, diags *diag.Diagnostics, r *apWlanGroupResource, model *apWlanGroupResourceModel) bool {
 	_, httpResp, callErr := r.client.ApAPI.GetOverviewDetail(ctx, r.omadacId, model.SiteId.ValueString(), model.ApMac.ValueString()).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, diags, "reading AP wlan group binding")
+	env, ok := envelope.Decode(httpResp, callErr, diags, "reading AP wlan group binding")
 	if !ok {
 		return false
 	}
 	// errNotFound (-1001): the AP is gone upstream. Signal it to the caller via a
 	// null wlan_group_id sentinel (the attribute is Required, so null never occurs
 	// legitimately) so Read can drop the resource from state.
-	if env.hasError() && env.ErrorCode != nil && *env.ErrorCode == errNotFound {
+	if env.HasError() && env.ErrorCode != nil && *env.ErrorCode == errNotFound {
 		model.WlanGroupId = types.StringNull()
 		model.ApName = types.StringNull()
 		return true
 	}
-	if env.hasError() {
+	if env.HasError() {
 		diags.AddError(
 			"Error reading AP wlan group binding",
 			fmt.Sprintf("Controller rejected the AP overview read for %s, error code %d: %s", model.ApMac.ValueString(), *env.ErrorCode, env.Msg),
@@ -341,18 +302,4 @@ func readOverview(ctx context.Context, diags *diag.Diagnostics, r *apWlanGroupRe
 
 	flattenOverviewRead(model, &ov)
 	return true
-}
-
-// respondAPIError records a controller-side error (non-zero errorCode) on the
-// given diagnostics.
-func respondAPIError(diags *diag.Diagnostics, action string, code *int32, msg string) {
-	if code == nil {
-		diags.AddError("Error "+action, "Controller rejected the request: "+msg)
-		return
-	}
-
-	diags.AddError(
-		"Error "+action,
-		fmt.Sprintf("Controller rejected the request, error code %d: %s", *code, msg),
-	)
 }
