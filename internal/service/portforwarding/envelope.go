@@ -1,20 +1,5 @@
 package portforwarding
 
-import "encoding/json"
-
-// omadaEnvelope is the standard {errorCode, msg, result} wrapper returned by
-// the Open API. Result is captured raw and decoded per operation so unknown
-// controller fields do not break the provider's reads.
-type omadaEnvelope struct {
-	ErrorCode *int32          `json:"errorCode"`
-	Msg       string          `json:"msg"`
-	Result    json.RawMessage `json:"result"`
-}
-
-func (e omadaEnvelope) hasError() bool {
-	return e.ErrorCode != nil && *e.ErrorCode != 0
-}
-
 // createResult accepts both the generic id key and a future/type-specific key.
 // Current controllers commonly omit result entirely for this endpoint, in
 // which case Create resolves the rule by its unique name from the list.

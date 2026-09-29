@@ -2,32 +2,10 @@ package wlangroup
 
 import "encoding/json"
 
-// Local, lenient decode types for the Omada Open API standard envelope.
-//
-// Mirrors the approach in internal/service/lannetwork/envelope.go: the
-// generated SDK decodes response bodies with DisallowUnknownFields, which
-// rejects fields the controller returns that the SDK model does not know
-// about. Controller firmware 5.15.x also returns shapes the SDK does not
-// expect (e.g. the WLAN-group list is a bare array under "result", not the
-// paged {"data":[...]} object the SDK assumes). These helpers re-read the
-// SDK call's re-readable http.Response.Body and decode with the standard
-// library (which ignores unknown fields), so the provider tolerates that
-// drift while still using the SDK for the authenticated HTTP transport.
-
-// omadaEnvelope is the standard {errorCode, msg, result} wrapper returned by
-// every Open API endpoint. Result is captured raw and decoded per-call.
-type omadaEnvelope struct {
-	ErrorCode *int32          `json:"errorCode"`
-	Msg       string          `json:"msg"`
-	Result    json.RawMessage `json:"result"`
-}
-
-// hasError reports a controller-side error (non-zero errorCode). The
-// "invalid request parameters" code (-1001) is surfaced by the controller when
-// a WLAN group does not exist; it is not treated as an error for read/delete.
-func (e omadaEnvelope) hasError() bool {
-	return e.ErrorCode != nil && *e.ErrorCode != 0
-}
+// Lenient, provider-local decode types for this resource's result payloads.
+// The {errorCode, msg, result} envelope itself is decoded by
+// internal/envelope, which also explains why these types exist: the SDK's
+// strict models reject fields the controller returns that they don't know.
 
 // createResult is the create payload. The controller returns the new id under
 // a type-specific key ("wlanId") rather than the generic "id" the SDK's

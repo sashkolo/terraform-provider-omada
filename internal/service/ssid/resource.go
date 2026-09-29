@@ -4,10 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"terraform-provider-omada/internal/client"
+	"terraform-provider-omada/internal/envelope"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -187,38 +186,6 @@ func (r *ssidResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 	}
 }
 
-// decodeEnvelope reads the (re-readable) response body from an SDK call and
-// decodes the standard Omada envelope leniently. This sidesteps the SDK's
-// strict per-model decoders and recovers the controller's errorCode/msg.
-func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnostics, action string) (omadaEnvelope, bool) {
-	if callErr != nil && httpResp == nil {
-		diags.AddError("Error "+action, "Transport error: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-	if httpResp == nil {
-		diags.AddError("Error "+action, "Controller returned no response.")
-		return omadaEnvelope{}, false
-	}
-	// The generated SDK already drains + NopCloser-rewraps Body before returning
-	// it, so Close() here is a defensive no-op; kept for hygiene and robustness
-	// against future SDK changes.
-	defer httpResp.Body.Close()
-
-	body, readErr := io.ReadAll(httpResp.Body)
-	if readErr != nil {
-		diags.AddError("Error "+action, "Could not read response body: "+readErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	var env omadaEnvelope
-	if jsonErr := json.Unmarshal(body, &env); jsonErr != nil {
-		diags.AddError("Error "+action, "Could not decode response: "+jsonErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	return env, true
-}
-
 // Create creates the resource and sets the initial Terraform state.
 func (r *ssidResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan ssidResourceModel
@@ -230,13 +197,13 @@ func (r *ssidResource) Create(ctx context.Context, req resource.CreateRequest, r
 
 	_, httpResp, callErr := r.client.WirelessNetworkAPI.CreateSsid(ctx, r.omadacId, plan.SiteId.ValueString(), plan.WlanGroupId.ValueString()).
 		CreateSsidOpenApiVO(expandCreateSsid(plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "creating SSID")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "creating SSID")
 	if !ok {
 		return
 	}
 
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "creating SSID", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "creating SSID", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -316,13 +283,13 @@ func (r *ssidResource) Update(ctx context.Context, req resource.UpdateRequest, r
 
 	_, httpResp, callErr := r.client.WirelessNetworkAPI.UpdateSsidBasicConfig(ctx, r.omadacId, plan.SiteId.ValueString(), plan.WlanGroupId.ValueString(), plan.SsidId.ValueString()).
 		UpdateSsidBasicConfigOpenApiVO(expandUpdateSsid(plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "updating SSID")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "updating SSID")
 	if !ok {
 		return
 	}
 
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "updating SSID", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "updating SSID", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -344,15 +311,15 @@ func (r *ssidResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	}
 
 	_, httpResp, callErr := r.client.WirelessNetworkAPI.DeleteSsid(ctx, r.omadacId, state.SiteId.ValueString(), state.WlanGroupId.ValueString(), state.SsidId.ValueString()).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "deleting SSID")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "deleting SSID")
 	if !ok {
 		return
 	}
 
 	// -1001 (invalid request parameters) is returned when the SSID no longer
 	// exists on 5.15.x; that is the desired end state for a delete.
-	if env.hasError() && env.ErrorCode != nil && *env.ErrorCode != errNotFound {
-		respondAPIError(&resp.Diagnostics, "deleting SSID", env.ErrorCode, env.Msg)
+	if env.HasError() && env.ErrorCode != nil && *env.ErrorCode != errNotFound {
+		envelope.AddAPIError(&resp.Diagnostics, "deleting SSID", env.ErrorCode, env.Msg)
 		return
 	}
 }
@@ -382,12 +349,12 @@ func (r *ssidResource) ImportState(ctx context.Context, req resource.ImportState
 func findSsidByName(ctx context.Context, diags *diag.Diagnostics, r *ssidResource, model *ssidResourceModel) bool {
 	_, httpResp, callErr := r.client.WirelessNetworkAPI.GetSsidList(ctx, r.omadacId, model.SiteId.ValueString(), model.WlanGroupId.ValueString()).
 		Page(1).PageSize(1000).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, diags, "reading SSID")
+	env, ok := envelope.Decode(httpResp, callErr, diags, "reading SSID")
 	if !ok {
 		return false
 	}
 
-	if env.hasError() {
+	if env.HasError() {
 		diags.AddError(
 			"Error reading SSID",
 			fmt.Sprintf("Controller rejected the SSID list for WLAN group %s, error code %d: %s", model.WlanGroupId.ValueString(), *env.ErrorCode, env.Msg),
@@ -426,18 +393,18 @@ func awaitFindSsidByName(ctx context.Context, diags *diag.Diagnostics, r *ssidRe
 // controller masks it on read.
 func readSsid(ctx context.Context, diags *diag.Diagnostics, r *ssidResource, model *ssidResourceModel) bool {
 	_, httpResp, callErr := r.client.WirelessNetworkAPI.GetSsidDetail(ctx, r.omadacId, model.SiteId.ValueString(), model.WlanGroupId.ValueString(), model.SsidId.ValueString()).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, diags, "reading SSID")
+	env, ok := envelope.Decode(httpResp, callErr, diags, "reading SSID")
 	if !ok {
 		return false
 	}
 
 	// -1001: the SSID is gone upstream. Drop it from state by clearing the id.
-	if env.hasError() && env.ErrorCode != nil && *env.ErrorCode == errNotFound {
+	if env.HasError() && env.ErrorCode != nil && *env.ErrorCode == errNotFound {
 		model.SsidId = types.StringNull()
 		return true
 	}
 
-	if env.hasError() {
+	if env.HasError() {
 		diags.AddError(
 			"Error reading SSID",
 			fmt.Sprintf("Controller rejected the detail read for SSID %s, error code %d: %s", model.SsidId.ValueString(), *env.ErrorCode, env.Msg),
@@ -462,11 +429,11 @@ func readSsid(ctx context.Context, diags *diag.Diagnostics, r *ssidResource, mod
 func awaitReadSsid(ctx context.Context, diags *diag.Diagnostics, r *ssidResource, model *ssidResourceModel) bool {
 	return runWithBackoff(ctx, func() bool {
 		_, httpResp, callErr := r.client.WirelessNetworkAPI.GetSsidDetail(ctx, r.omadacId, model.SiteId.ValueString(), model.WlanGroupId.ValueString(), model.SsidId.ValueString()).Execute()
-		env, ok := decodeEnvelope(httpResp, callErr, diags, "reading SSID")
+		env, ok := envelope.Decode(httpResp, callErr, diags, "reading SSID")
 		if !ok {
 			return false
 		}
-		if env.hasError() {
+		if env.HasError() {
 			// Not readable yet (propagation lag); retry. A real error will
 			// persist across attempts and surface after the budget is spent.
 			return false
@@ -503,18 +470,4 @@ func runWithBackoff(ctx context.Context, fn func() bool) bool {
 		}
 	}
 	return false
-}
-
-// respondAPIError records a controller-side error (non-zero errorCode) on the
-// given diagnostics.
-func respondAPIError(diags *diag.Diagnostics, action string, code *int32, msg string) {
-	if code == nil {
-		diags.AddError("Error "+action, "Controller rejected the request: "+msg)
-		return
-	}
-
-	diags.AddError(
-		"Error "+action,
-		fmt.Sprintf("Controller rejected the request, error code %d: %s", *code, msg),
-	)
 }

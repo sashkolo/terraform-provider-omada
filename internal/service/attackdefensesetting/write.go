@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"terraform-provider-omada/internal/envelope"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 )
@@ -156,19 +157,19 @@ func modifyAttackDefenseSetting(ctx context.Context, r *attackDefenseSettingReso
 
 	// http.Client.Do only errors on transport/redirect-policy failures (not on
 	// non-2xx), and on a redirect-policy failure the returned body is already
-	// closed. Handle the error up front rather than letting decodeEnvelope read a
+	// closed. Handle the error up front rather than letting envelope.Decode read a
 	// closed body; a controller-side rejection arrives as a 200 envelope instead.
 	httpResp, callErr := httpClient.Do(req)
 	if callErr != nil {
 		diags.AddError("Error "+action, "Transport error: "+callErr.Error())
 		return false
 	}
-	env, ok := decodeEnvelope(httpResp, nil, diags, action)
+	env, ok := envelope.Decode(httpResp, nil, diags, action)
 	if !ok {
 		return false
 	}
-	if env.hasError() {
-		respondAPIError(diags, action, env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(diags, action, env.ErrorCode, env.Msg)
 		return false
 	}
 	return true

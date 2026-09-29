@@ -4,11 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"sort"
 	"strings"
 	"terraform-provider-omada/internal/client"
+	"terraform-provider-omada/internal/envelope"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -93,45 +92,6 @@ func (r *gatewayAclOrderResource) Schema(_ context.Context, _ resource.SchemaReq
 			},
 		},
 	}
-}
-
-// decodeEnvelope reads the (re-readable) response body from an SDK call and
-// decodes the standard Omada envelope leniently.
-func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnostics, action string) (omadaEnvelope, bool) {
-	if callErr != nil && httpResp == nil {
-		diags.AddError("Error "+action, "Transport error: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-	if httpResp == nil {
-		diags.AddError("Error "+action, "Controller returned no response.")
-		return omadaEnvelope{}, false
-	}
-	defer httpResp.Body.Close()
-
-	body, readErr := io.ReadAll(httpResp.Body)
-	if readErr != nil {
-		diags.AddError("Error "+action, "Could not read response body: "+readErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	var env omadaEnvelope
-	if jsonErr := json.Unmarshal(body, &env); jsonErr != nil {
-		msg := "Could not decode response: " + jsonErr.Error()
-		if callErr != nil {
-			msg += fmt.Sprintf(" (original error: %s)", callErr.Error())
-		}
-		diags.AddError("Error "+action, msg)
-		return omadaEnvelope{}, false
-	}
-
-	// A transport/HTTP error whose body decoded but carries no errorCode would
-	// otherwise slip past hasError() and be treated as success; surface it.
-	if callErr != nil && env.ErrorCode == nil {
-		diags.AddError("Error "+action, "API call failed: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	return env, true
 }
 
 // Create sets the gateway ACL order and records it in state.
@@ -266,12 +226,12 @@ func (r *gatewayAclOrderResource) applyOrder(ctx context.Context, diags *diag.Di
 
 	_, httpResp, callErr := r.client.ACLAPI.ModifyAclIndex(ctx, r.omadacId, siteId).
 		DragSortIndexOpenapiVO(omada.DragSortIndexOpenapiVO{Indexes: indexes, Type: dragSortTypeGateway}).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, diags, "reordering gateway ACLs")
+	env, ok := envelope.Decode(httpResp, callErr, diags, "reordering gateway ACLs")
 	if !ok {
 		return false
 	}
-	if env.hasError() {
-		respondAPIError(diags, "reordering gateway ACLs", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(diags, "reordering gateway ACLs", env.ErrorCode, env.Msg)
 		return false
 	}
 
@@ -282,11 +242,11 @@ func (r *gatewayAclOrderResource) applyOrder(ctx context.Context, diags *diag.Di
 func (r *gatewayAclOrderResource) fetchList(ctx context.Context, diags *diag.Diagnostics, siteId string) []aclIndexRow {
 	_, httpResp, callErr := r.client.ACLAPI.GetOsgAclList(ctx, r.omadacId, siteId).
 		Page(1).PageSize(1000).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, diags, "reading gateway ACLs")
+	env, ok := envelope.Decode(httpResp, callErr, diags, "reading gateway ACLs")
 	if !ok {
 		return nil
 	}
-	if env.hasError() {
+	if env.HasError() {
 		diags.AddError(
 			"Error reading gateway ACLs",
 			fmt.Sprintf("Controller rejected the list for site %s, error code %d: %s", siteId, *env.ErrorCode, env.Msg),
@@ -328,13 +288,4 @@ func (r *gatewayAclOrderResource) liveIDSet(ctx context.Context, diags *diag.Dia
 		set[row.Id] = true
 	}
 	return set, true
-}
-
-// respondAPIError records a controller-side error (non-zero errorCode).
-func respondAPIError(diags *diag.Diagnostics, action string, code *int32, msg string) {
-	if code == nil {
-		diags.AddError("Error "+action, "Controller rejected the request: "+msg)
-		return
-	}
-	diags.AddError("Error "+action, fmt.Sprintf("Controller rejected the request, error code %d: %s", *code, msg))
 }

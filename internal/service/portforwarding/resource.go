@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
-	"net/http"
 	"strconv"
 	"strings"
 	"terraform-provider-omada/internal/client"
+	"terraform-provider-omada/internal/envelope"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -222,44 +221,6 @@ func validatePortAttribute(diags *diag.Diagnostics, attributePath path.Path, val
 	}
 }
 
-func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnostics, action string) (omadaEnvelope, bool) {
-	if callErr != nil && httpResp == nil {
-		diags.AddError("Error "+action, "Transport error: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-	if httpResp == nil {
-		diags.AddError("Error "+action, "Controller returned no response.")
-		return omadaEnvelope{}, false
-	}
-	if httpResp.Body == nil {
-		diags.AddError("Error "+action, "Controller returned a response with no body.")
-		return omadaEnvelope{}, false
-	}
-	defer httpResp.Body.Close()
-
-	body, readErr := io.ReadAll(httpResp.Body)
-	if readErr != nil {
-		diags.AddError("Error "+action, "Could not read response body: "+readErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	var env omadaEnvelope
-	if err := json.Unmarshal(body, &env); err != nil {
-		message := "Could not decode response: " + err.Error()
-		if callErr != nil {
-			message += " (original error: " + callErr.Error() + ")"
-		}
-		diags.AddError("Error "+action, message)
-		return omadaEnvelope{}, false
-	}
-	if callErr != nil && env.ErrorCode == nil {
-		diags.AddError("Error "+action, "API call failed: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	return env, true
-}
-
 func (r *portForwardingResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan portForwardingResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
@@ -269,12 +230,12 @@ func (r *portForwardingResource) Create(ctx context.Context, req resource.Create
 
 	_, httpResp, callErr := r.client.NATAPI.CreatePortForwarding(ctx, r.omadacId, plan.SiteId.ValueString()).
 		PortForwardingConfig(expandPortForwarding(plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "creating port forwarding")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "creating port forwarding")
 	if !ok {
 		return
 	}
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "creating port forwarding", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "creating port forwarding", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -345,12 +306,12 @@ func (r *portForwardingResource) Update(ctx context.Context, req resource.Update
 
 	_, httpResp, callErr := r.client.NATAPI.ModifyPortForwarding(ctx, r.omadacId, plan.SiteId.ValueString(), plan.PortForwardingId.ValueString()).
 		PortForwardingConfig(expandPortForwarding(plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "updating port forwarding")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "updating port forwarding")
 	if !ok {
 		return
 	}
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "updating port forwarding", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "updating port forwarding", env.ErrorCode, env.Msg)
 		return
 	}
 	if !awaitRead(ctx, &resp.Diagnostics, r, &plan) {
@@ -370,12 +331,12 @@ func (r *portForwardingResource) Delete(ctx context.Context, req resource.Delete
 	}
 
 	_, httpResp, callErr := r.client.NATAPI.DeletePortForwarding(ctx, r.omadacId, state.SiteId.ValueString(), state.PortForwardingId.ValueString()).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "deleting port forwarding")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "deleting port forwarding")
 	if !ok {
 		return
 	}
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "deleting port forwarding", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "deleting port forwarding", env.ErrorCode, env.Msg)
 	}
 }
 
@@ -394,12 +355,12 @@ func fetchList(ctx context.Context, diags *diag.Diagnostics, r *portForwardingRe
 	for page := int32(1); ; page++ {
 		_, httpResp, callErr := r.client.NATAPI.GetPortForwardingList(ctx, r.omadacId, model.SiteId.ValueString()).
 			Page(page).PageSize(listPageSize).Execute()
-		env, ok := decodeEnvelope(httpResp, callErr, diags, "reading port forwarding")
+		env, ok := envelope.Decode(httpResp, callErr, diags, "reading port forwarding")
 		if !ok {
 			return nil
 		}
-		if env.hasError() {
-			respondAPIError(diags, "reading port forwarding", env.ErrorCode, env.Msg)
+		if env.HasError() {
+			envelope.AddAPIError(diags, "reading port forwarding", env.ErrorCode, env.Msg)
 			return nil
 		}
 		var result listResult
@@ -498,12 +459,4 @@ func retry(ctx context.Context, diags *diag.Diagnostics, action func() bool) boo
 		}
 	}
 	return false
-}
-
-func respondAPIError(diags *diag.Diagnostics, action string, code *int32, message string) {
-	if code == nil {
-		diags.AddError("Error "+action, "Controller rejected the request: "+message)
-		return
-	}
-	diags.AddError("Error "+action, fmt.Sprintf("Controller rejected the request, error code %d: %s", *code, message))
 }

@@ -4,10 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"terraform-provider-omada/internal/client"
+	"terraform-provider-omada/internal/envelope"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -186,43 +185,6 @@ func (r *switchPortProfileResource) Schema(_ context.Context, _ resource.SchemaR
 	}
 }
 
-// decodeEnvelope reads the (re-readable) response body from an SDK call and
-// decodes the standard Omada envelope leniently. This sidesteps the SDK's strict
-// per-model decoders (which reject fields the controller returns that the SDK
-// model does not know) and recovers the controller's errorCode/msg.
-func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnostics, action string) (omadaEnvelope, bool) {
-	if callErr != nil && httpResp == nil {
-		diags.AddError("Error "+action, "Transport error: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-	if httpResp == nil {
-		diags.AddError("Error "+action, "Controller returned no response.")
-		return omadaEnvelope{}, false
-	}
-	defer httpResp.Body.Close()
-
-	body, readErr := io.ReadAll(httpResp.Body)
-	if readErr != nil {
-		diags.AddError("Error "+action, "Could not read response body: "+readErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	var env omadaEnvelope
-	if jsonErr := json.Unmarshal(body, &env); jsonErr != nil {
-		msg := "Could not decode response: " + jsonErr.Error()
-		if callErr != nil {
-			// The controller likely returned a non-JSON body (HTML error page,
-			// empty body) alongside an HTTP/transport error; surface it so the
-			// real status code is not lost behind a generic parse error.
-			msg += fmt.Sprintf(" (original error: %s)", callErr.Error())
-		}
-		diags.AddError("Error "+action, msg)
-		return omadaEnvelope{}, false
-	}
-
-	return env, true
-}
-
 // Create creates the resource and sets the initial Terraform state.
 func (r *switchPortProfileResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan switchPortProfileResourceModel
@@ -234,12 +196,12 @@ func (r *switchPortProfileResource) Create(ctx context.Context, req resource.Cre
 
 	_, httpResp, callErr := r.client.WiredNetworkAPI.CreateLanProfile(ctx, r.omadacId, plan.SiteId.ValueString()).
 		LanProfileConfigOpenApiVO(expandProfile(ctx, plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "creating switch port profile")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "creating switch port profile")
 	if !ok {
 		return
 	}
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "creating switch port profile", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "creating switch port profile", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -313,12 +275,12 @@ func (r *switchPortProfileResource) Update(ctx context.Context, req resource.Upd
 
 	_, httpResp, callErr := r.client.WiredNetworkAPI.ModifyLanProfile(ctx, r.omadacId, plan.SiteId.ValueString(), plan.ProfileId.ValueString()).
 		LanProfileConfigOpenApiVO(expandProfile(ctx, plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "updating switch port profile")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "updating switch port profile")
 	if !ok {
 		return
 	}
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "updating switch port profile", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "updating switch port profile", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -340,15 +302,15 @@ func (r *switchPortProfileResource) Delete(ctx context.Context, req resource.Del
 	}
 
 	_, httpResp, callErr := r.client.WiredNetworkAPI.DeleteLanProfile(ctx, r.omadacId, state.SiteId.ValueString(), state.ProfileId.ValueString()).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "deleting switch port profile")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "deleting switch port profile")
 	if !ok {
 		return
 	}
 
 	// A "profile does not exist" code is a successful delete: the resource is
 	// already gone, which is the desired end state.
-	if env.hasError() && env.ErrorCode != nil && *env.ErrorCode != errProfileNotFound {
-		respondAPIError(&resp.Diagnostics, "deleting switch port profile", env.ErrorCode, env.Msg)
+	if env.HasError() && env.ErrorCode != nil && *env.ErrorCode != errProfileNotFound {
+		envelope.AddAPIError(&resp.Diagnostics, "deleting switch port profile", env.ErrorCode, env.Msg)
 		return
 	}
 }
@@ -375,12 +337,12 @@ func (r *switchPortProfileResource) ImportState(ctx context.Context, req resourc
 func fetchProfileList(ctx context.Context, diags *diag.Diagnostics, r *switchPortProfileResource, model *switchPortProfileResourceModel) []profileReadRow {
 	_, httpResp, callErr := r.client.WiredNetworkAPI.GetLanProfileList(ctx, r.omadacId, model.SiteId.ValueString()).
 		Page(1).PageSize(1000).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, diags, "reading switch port profile")
+	env, ok := envelope.Decode(httpResp, callErr, diags, "reading switch port profile")
 	if !ok {
 		return nil
 	}
 
-	if env.hasError() {
+	if env.HasError() {
 		diags.AddError(
 			"Error reading switch port profile",
 			fmt.Sprintf("Controller rejected the list for site %s, error code %d: %s", model.SiteId.ValueString(), *env.ErrorCode, env.Msg),
@@ -436,18 +398,4 @@ func readProfile(ctx context.Context, diags *diag.Diagnostics, r *switchPortProf
 	// Not present in the list: the profile is gone upstream.
 	model.ProfileId = types.StringNull()
 	return true
-}
-
-// respondAPIError records a controller-side error (non-zero errorCode) on the
-// given diagnostics.
-func respondAPIError(diags *diag.Diagnostics, action string, code *int32, msg string) {
-	if code == nil {
-		diags.AddError("Error "+action, "Controller rejected the request: "+msg)
-		return
-	}
-
-	diags.AddError(
-		"Error "+action,
-		fmt.Sprintf("Controller rejected the request, error code %d: %s", *code, msg),
-	)
 }

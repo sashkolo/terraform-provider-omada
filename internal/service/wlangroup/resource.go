@@ -4,10 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"terraform-provider-omada/internal/client"
+	"terraform-provider-omada/internal/envelope"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -101,38 +100,6 @@ func (r *wlanGroupResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 	}
 }
 
-// decodeEnvelope reads the (re-readable) response body from an SDK call and
-// decodes the standard Omada envelope leniently. This sidesteps the SDK's
-// strict per-model decoders and recovers the controller's errorCode/msg.
-func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnostics, action string) (omadaEnvelope, bool) {
-	if callErr != nil && httpResp == nil {
-		diags.AddError("Error "+action, "Transport error: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-	if httpResp == nil {
-		diags.AddError("Error "+action, "Controller returned no response.")
-		return omadaEnvelope{}, false
-	}
-	// The generated SDK already drains + NopCloser-rewraps Body before returning
-	// it, so Close() here is a defensive no-op; kept for hygiene and robustness
-	// against future SDK changes.
-	defer httpResp.Body.Close()
-
-	body, readErr := io.ReadAll(httpResp.Body)
-	if readErr != nil {
-		diags.AddError("Error "+action, "Could not read response body: "+readErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	var env omadaEnvelope
-	if jsonErr := json.Unmarshal(body, &env); jsonErr != nil {
-		diags.AddError("Error "+action, "Could not decode response: "+jsonErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	return env, true
-}
-
 // Create creates the resource and sets the initial Terraform state.
 func (r *wlanGroupResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan wlanGroupResourceModel
@@ -144,13 +111,13 @@ func (r *wlanGroupResource) Create(ctx context.Context, req resource.CreateReque
 
 	_, httpResp, callErr := r.client.WirelessNetworkAPI.CreateWlanGroup(ctx, r.omadacId, plan.SiteId.ValueString()).
 		CreateWlanGroupOpenApiVO(expandCreateWlanGroup(plan.Name.ValueString())).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "creating WLAN group")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "creating WLAN group")
 	if !ok {
 		return
 	}
 
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "creating WLAN group", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "creating WLAN group", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -231,13 +198,13 @@ func (r *wlanGroupResource) Update(ctx context.Context, req resource.UpdateReque
 
 	_, httpResp, callErr := r.client.WirelessNetworkAPI.UpdateWlanGroup(ctx, r.omadacId, plan.SiteId.ValueString(), plan.WlanId.ValueString()).
 		UpdateWlanGroupOpenApiVO(expandUpdateWlanGroup(plan.Name.ValueString())).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "updating WLAN group")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "updating WLAN group")
 	if !ok {
 		return
 	}
 
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "updating WLAN group", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "updating WLAN group", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -259,15 +226,15 @@ func (r *wlanGroupResource) Delete(ctx context.Context, req resource.DeleteReque
 	}
 
 	_, httpResp, callErr := r.client.WirelessNetworkAPI.DeleteWlanGroup(ctx, r.omadacId, state.SiteId.ValueString(), state.WlanId.ValueString()).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "deleting WLAN group")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "deleting WLAN group")
 	if !ok {
 		return
 	}
 
 	// -1001 (invalid request parameters) is returned when the group no longer
 	// exists on 5.15.x; that is the desired end state for a delete.
-	if env.hasError() && env.ErrorCode != nil && *env.ErrorCode != errNotFound {
-		respondAPIError(&resp.Diagnostics, "deleting WLAN group", env.ErrorCode, env.Msg)
+	if env.HasError() && env.ErrorCode != nil && *env.ErrorCode != errNotFound {
+		envelope.AddAPIError(&resp.Diagnostics, "deleting WLAN group", env.ErrorCode, env.Msg)
 		return
 	}
 }
@@ -293,12 +260,12 @@ func (r *wlanGroupResource) ImportState(ctx context.Context, req resource.Import
 // decodes it leniently, tolerating both the bare-array and paged shapes.
 func fetchWlanGroupList(ctx context.Context, diags *diag.Diagnostics, r *wlanGroupResource, model *wlanGroupResourceModel) []wlanGroupReadRow {
 	_, httpResp, callErr := r.client.WirelessNetworkAPI.GetWlanGroupList(ctx, r.omadacId, model.SiteId.ValueString()).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, diags, "reading WLAN group")
+	env, ok := envelope.Decode(httpResp, callErr, diags, "reading WLAN group")
 	if !ok {
 		return nil
 	}
 
-	if env.hasError() {
+	if env.HasError() {
 		diags.AddError(
 			"Error reading WLAN group",
 			fmt.Sprintf("Controller rejected the list for site %s, error code %d: %s", model.SiteId.ValueString(), *env.ErrorCode, env.Msg),
@@ -406,18 +373,4 @@ func runWithBackoff(ctx context.Context, fn func() bool) bool {
 		}
 	}
 	return false
-}
-
-// respondAPIError records a controller-side error (non-zero errorCode) on the
-// given diagnostics.
-func respondAPIError(diags *diag.Diagnostics, action string, code *int32, msg string) {
-	if code == nil {
-		diags.AddError("Error "+action, "Controller rejected the request: "+msg)
-		return
-	}
-
-	diags.AddError(
-		"Error "+action,
-		fmt.Sprintf("Controller rejected the request, error code %d: %s", *code, msg),
-	)
 }

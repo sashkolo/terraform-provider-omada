@@ -4,10 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"terraform-provider-omada/internal/client"
+	"terraform-provider-omada/internal/envelope"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -130,54 +129,6 @@ func (r *reservationResource) Schema(_ context.Context, _ resource.SchemaRequest
 	}
 }
 
-// decodeEnvelope reads the (re-readable) response body from an SDK call and
-// decodes the standard Omada envelope leniently. This sidesteps the SDK's strict
-// per-model decoders (which reject fields the controller returns that the SDK
-// model does not know) and recovers the controller's errorCode/msg.
-func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnostics, action string) (omadaEnvelope, bool) {
-	if callErr != nil && httpResp == nil {
-		diags.AddError("Error "+action, "Transport error: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-	if httpResp == nil {
-		diags.AddError("Error "+action, "Controller returned no response.")
-		return omadaEnvelope{}, false
-	}
-	// net/http guarantees a non-nil Body for a non-nil Response, but a mocked
-	// transport or SDK anomaly could return one with a nil Body; guard the read.
-	if httpResp.Body == nil {
-		diags.AddError("Error "+action, "Controller returned a response with no body.")
-		return omadaEnvelope{}, false
-	}
-	defer httpResp.Body.Close()
-
-	body, readErr := io.ReadAll(httpResp.Body)
-	if readErr != nil {
-		diags.AddError("Error "+action, "Could not read response body: "+readErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	var env omadaEnvelope
-	if jsonErr := json.Unmarshal(body, &env); jsonErr != nil {
-		msg := "Could not decode response: " + jsonErr.Error()
-		if callErr != nil {
-			msg += fmt.Sprintf(" (original error: %s)", callErr.Error())
-		}
-		diags.AddError("Error "+action, msg)
-		return omadaEnvelope{}, false
-	}
-
-	// A transport/HTTP error (non-2xx) whose body decoded but carries no
-	// errorCode (e.g. a reverse-proxy error page shaped as JSON) would otherwise
-	// slip past hasError() and be treated as success; surface it instead.
-	if callErr != nil && env.ErrorCode == nil {
-		diags.AddError("Error "+action, "API call failed: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	return env, true
-}
-
 // Create creates the resource and sets the initial Terraform state.
 func (r *reservationResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan reservationResourceModel
@@ -189,12 +140,12 @@ func (r *reservationResource) Create(ctx context.Context, req resource.CreateReq
 
 	_, httpResp, callErr := r.client.ServiceAPI.CreateDhcpReservation(ctx, r.omadacId, plan.SiteId.ValueString()).
 		CreateDhcpReservationOpenApiVO(expandReservation(plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "creating DHCP reservation")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "creating DHCP reservation")
 	if !ok {
 		return
 	}
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "creating DHCP reservation", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "creating DHCP reservation", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -268,12 +219,12 @@ func (r *reservationResource) Update(ctx context.Context, req resource.UpdateReq
 
 	_, httpResp, callErr := r.client.ServiceAPI.ModifyDhcpReservation(ctx, r.omadacId, plan.SiteId.ValueString(), plan.Mac.ValueString()).
 		CreateDhcpReservationOpenApiVO(expandReservation(plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "updating DHCP reservation")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "updating DHCP reservation")
 	if !ok {
 		return
 	}
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "updating DHCP reservation", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "updating DHCP reservation", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -301,12 +252,12 @@ func (r *reservationResource) Delete(ctx context.Context, req resource.DeleteReq
 	}
 
 	_, httpResp, callErr := r.client.ServiceAPI.DeleteDhcpReservation(ctx, r.omadacId, state.SiteId.ValueString(), state.Mac.ValueString()).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "deleting DHCP reservation")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "deleting DHCP reservation")
 	if !ok {
 		return
 	}
 
-	if env.hasError() {
+	if env.HasError() {
 		// A delete may fail because the reservation is already gone (e.g. removed
 		// out-of-band). The error-code table is not documented for this endpoint,
 		// so confirm absence by re-reading the grid rather than guessing a code:
@@ -321,7 +272,7 @@ func (r *reservationResource) Delete(ctx context.Context, req resource.DeleteReq
 		// the original delete error, plus any probe error context so a network or
 		// auth failure during the re-read is not silently dropped.
 		resp.Diagnostics.Append(probeDiags...)
-		respondAPIError(&resp.Diagnostics, "deleting DHCP reservation", env.ErrorCode, env.Msg)
+		envelope.AddAPIError(&resp.Diagnostics, "deleting DHCP reservation", env.ErrorCode, env.Msg)
 		return
 	}
 }
@@ -352,11 +303,11 @@ func fetchReservationList(ctx context.Context, diags *diag.Diagnostics, r *reser
 	for page := int32(1); ; page++ {
 		_, httpResp, callErr := r.client.ServiceAPI.GetDhcpReservationGrid(ctx, r.omadacId, model.SiteId.ValueString()).
 			Page(page).PageSize(gridPageSize).Execute()
-		env, ok := decodeEnvelope(httpResp, callErr, diags, "reading DHCP reservation")
+		env, ok := envelope.Decode(httpResp, callErr, diags, "reading DHCP reservation")
 		if !ok {
 			return nil
 		}
-		if env.hasError() {
+		if env.HasError() {
 			diags.AddError(
 				"Error reading DHCP reservation",
 				fmt.Sprintf("Controller rejected the reservation grid for site %s, error code %d: %s", model.SiteId.ValueString(), *env.ErrorCode, env.Msg),
@@ -415,18 +366,4 @@ func readReservation(ctx context.Context, diags *diag.Diagnostics, r *reservatio
 // missing a reservation the operator entered with a different separator.
 func normalizeMAC(s string) string {
 	return strings.ToLower(strings.NewReplacer("-", "", ":", "", ".", "").Replace(s))
-}
-
-// respondAPIError records a controller-side error (non-zero errorCode) on the
-// given diagnostics.
-func respondAPIError(diags *diag.Diagnostics, action string, code *int32, msg string) {
-	if code == nil {
-		diags.AddError("Error "+action, "Controller rejected the request: "+msg)
-		return
-	}
-
-	diags.AddError(
-		"Error "+action,
-		fmt.Sprintf("Controller rejected the request, error code %d: %s", *code, msg),
-	)
 }

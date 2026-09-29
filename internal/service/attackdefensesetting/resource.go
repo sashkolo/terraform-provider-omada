@@ -4,10 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"terraform-provider-omada/internal/client"
+	"terraform-provider-omada/internal/envelope"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -126,46 +125,16 @@ func optionalInt32(desc string) schema.Int32Attribute {
 	return schema.Int32Attribute{Description: desc, Optional: true}
 }
 
-// decodeEnvelope reads the (re-readable) response body from an SDK call and
-// decodes the standard Omada envelope leniently. This sidesteps the SDK's strict
-// per-model decoders (DisallowUnknownFields) and recovers the controller's
-// errorCode/msg. See envelope.go for why this is mandatory on 5.15.x.
-func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnostics, action string) (omadaEnvelope, bool) {
-	if callErr != nil && httpResp == nil {
-		diags.AddError("Error "+action, "Transport error: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-	if httpResp == nil {
-		diags.AddError("Error "+action, "Controller returned no response.")
-		return omadaEnvelope{}, false
-	}
-	defer httpResp.Body.Close()
-
-	body, readErr := io.ReadAll(httpResp.Body)
-	if readErr != nil {
-		diags.AddError("Error "+action, "Could not read response body: "+readErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	var env omadaEnvelope
-	if jsonErr := json.Unmarshal(body, &env); jsonErr != nil {
-		diags.AddError("Error "+action, "Could not decode response: "+jsonErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	return env, true
-}
-
 // readAttackDefenseSetting fetches the singleton and refreshes the model in
 // place. It returns false only on a controller/transport error.
 func readAttackDefenseSetting(ctx context.Context, diags *diag.Diagnostics, r *attackDefenseSettingResource, model *attackDefenseSettingResourceModel) bool {
 	_, httpResp, callErr := r.client.AttackDefenseAPI.GetAttackDefenseSetting(ctx, r.omadacId, model.SiteId.ValueString()).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, diags, "reading attack-defense setting")
+	env, ok := envelope.Decode(httpResp, callErr, diags, "reading attack-defense setting")
 	if !ok {
 		return false
 	}
-	if env.hasError() {
-		respondAPIError(diags, "reading attack-defense setting", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(diags, "reading attack-defense setting", env.ErrorCode, env.Msg)
 		return false
 	}
 	var vo attackDefenseReadVO
@@ -264,18 +233,4 @@ func (r *attackDefenseSettingResource) ImportState(ctx context.Context, req reso
 	}
 
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("site_id"), req.ID)...)
-}
-
-// respondAPIError records a controller-side error (non-zero errorCode) on the
-// given diagnostics.
-func respondAPIError(diags *diag.Diagnostics, action string, code *int32, msg string) {
-	if code == nil {
-		diags.AddError("Error "+action, "Controller rejected the request: "+msg)
-		return
-	}
-
-	diags.AddError(
-		"Error "+action,
-		fmt.Sprintf("Controller rejected the request, error code %d: %s", *code, msg),
-	)
 }

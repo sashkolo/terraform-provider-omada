@@ -2,6 +2,7 @@ package site_test
 
 import (
 	"net/http"
+	"regexp"
 	"terraform-provider-omada/internal/acctest"
 	"testing"
 
@@ -64,6 +65,28 @@ func TestAcc_SitesDataSource(t *testing.T) {
 					resource.TestCheckResourceAttr("data.omada_sites.test", "sites.0.support_es", "true"),
 					resource.TestCheckResourceAttr("data.omada_sites.test", "sites.0.support_l2", "true"),
 				),
+			},
+		},
+	})
+}
+
+// TestAcc_SitesDataSourceControllerError is the homelab #235 regression: an
+// error envelope (here an expired token) has no result, and the data source
+// dereferenced it and crashed the provider instead of reporting the error.
+func TestAcc_SitesDataSourceControllerError(t *testing.T) {
+	ts := acctest.NewTestServer(t)
+
+	ts.Mux.HandleFunc("GET /openapi/v1/{omadacId}/sites", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errorCode":-44112,"msg":"The access token has expired."}`))
+	})
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config:      ts.ProviderConfig + `data "omada_sites" "test" {}`,
+				ExpectError: regexp.MustCompile(`error code -44112`),
 			},
 		},
 	})

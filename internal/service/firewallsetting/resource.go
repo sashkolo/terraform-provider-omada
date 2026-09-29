@@ -4,10 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"terraform-provider-omada/internal/client"
+	"terraform-provider-omada/internal/envelope"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -123,46 +122,16 @@ func int32Timeout(desc string) schema.Int32Attribute {
 	return schema.Int32Attribute{Description: desc + " " + commonTimeouts, Required: true}
 }
 
-// decodeEnvelope reads the (re-readable) response body from an SDK call and
-// decodes the standard Omada envelope leniently. This sidesteps the SDK's strict
-// per-model decoders (DisallowUnknownFields) and recovers the controller's
-// errorCode/msg. See envelope.go for why this is mandatory on 5.15.x.
-func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnostics, action string) (omadaEnvelope, bool) {
-	if callErr != nil && httpResp == nil {
-		diags.AddError("Error "+action, "Transport error: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-	if httpResp == nil {
-		diags.AddError("Error "+action, "Controller returned no response.")
-		return omadaEnvelope{}, false
-	}
-	defer httpResp.Body.Close()
-
-	body, readErr := io.ReadAll(httpResp.Body)
-	if readErr != nil {
-		diags.AddError("Error "+action, "Could not read response body: "+readErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	var env omadaEnvelope
-	if jsonErr := json.Unmarshal(body, &env); jsonErr != nil {
-		diags.AddError("Error "+action, "Could not decode response: "+jsonErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	return env, true
-}
-
 // readFirewallSetting fetches the singleton and refreshes the model in place.
 // It returns false only on a controller/transport error.
 func readFirewallSetting(ctx context.Context, diags *diag.Diagnostics, r *firewallSettingResource, model *firewallSettingResourceModel) bool {
 	_, httpResp, callErr := r.client.FirewallAPI.GetFirewallSetting(ctx, r.omadacId, model.SiteId.ValueString()).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, diags, "reading firewall setting")
+	env, ok := envelope.Decode(httpResp, callErr, diags, "reading firewall setting")
 	if !ok {
 		return false
 	}
-	if env.hasError() {
-		respondAPIError(diags, "reading firewall setting", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(diags, "reading firewall setting", env.ErrorCode, env.Msg)
 		return false
 	}
 	var vo firewallReadVO
@@ -186,12 +155,12 @@ func (r *firewallSettingResource) Create(ctx context.Context, req resource.Creat
 
 	_, httpResp, callErr := r.client.FirewallAPI.ModifyFirewallSetting(ctx, r.omadacId, plan.SiteId.ValueString()).
 		FirewallSetting(expandFirewallSetting(plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "creating firewall setting")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "creating firewall setting")
 	if !ok {
 		return
 	}
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "creating firewall setting", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "creating firewall setting", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -239,12 +208,12 @@ func (r *firewallSettingResource) Update(ctx context.Context, req resource.Updat
 
 	_, httpResp, callErr := r.client.FirewallAPI.ModifyFirewallSetting(ctx, r.omadacId, plan.SiteId.ValueString()).
 		FirewallSetting(expandFirewallSetting(plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "updating firewall setting")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "updating firewall setting")
 	if !ok {
 		return
 	}
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "updating firewall setting", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "updating firewall setting", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -275,18 +244,4 @@ func (r *firewallSettingResource) ImportState(ctx context.Context, req resource.
 	}
 
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("site_id"), req.ID)...)
-}
-
-// respondAPIError records a controller-side error (non-zero errorCode) on the
-// given diagnostics.
-func respondAPIError(diags *diag.Diagnostics, action string, code *int32, msg string) {
-	if code == nil {
-		diags.AddError("Error "+action, "Controller rejected the request: "+msg)
-		return
-	}
-
-	diags.AddError(
-		"Error "+action,
-		fmt.Sprintf("Controller rejected the request, error code %d: %s", *code, msg),
-	)
 }

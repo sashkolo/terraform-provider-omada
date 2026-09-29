@@ -4,10 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"terraform-provider-omada/internal/client"
+	"terraform-provider-omada/internal/envelope"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -160,46 +159,6 @@ func (r *ipPortGroupResource) Schema(_ context.Context, _ resource.SchemaRequest
 	}
 }
 
-// decodeEnvelope reads the (re-readable) response body from an SDK call and
-// decodes the standard Omada envelope leniently.
-func decodeEnvelope(httpResp *http.Response, callErr error, diags *diag.Diagnostics, action string) (omadaEnvelope, bool) {
-	if callErr != nil && httpResp == nil {
-		diags.AddError("Error "+action, "Transport error: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-	if httpResp == nil {
-		diags.AddError("Error "+action, "Controller returned no response.")
-		return omadaEnvelope{}, false
-	}
-	defer httpResp.Body.Close()
-
-	body, readErr := io.ReadAll(httpResp.Body)
-	if readErr != nil {
-		diags.AddError("Error "+action, "Could not read response body: "+readErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	var env omadaEnvelope
-	if jsonErr := json.Unmarshal(body, &env); jsonErr != nil {
-		msg := "Could not decode response: " + jsonErr.Error()
-		if callErr != nil {
-			msg += fmt.Sprintf(" (original error: %s)", callErr.Error())
-		}
-		diags.AddError("Error "+action, msg)
-		return omadaEnvelope{}, false
-	}
-
-	// A transport/HTTP error (non-2xx) whose body decoded but carries no
-	// errorCode (e.g. a reverse-proxy error page shaped as JSON) would otherwise
-	// slip past hasError() and be treated as success; surface it instead.
-	if callErr != nil && env.ErrorCode == nil {
-		diags.AddError("Error "+action, "API call failed: "+callErr.Error())
-		return omadaEnvelope{}, false
-	}
-
-	return env, true
-}
-
 // Create creates the resource and sets the initial Terraform state.
 func (r *ipPortGroupResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan ipPortGroupResourceModel
@@ -211,12 +170,12 @@ func (r *ipPortGroupResource) Create(ctx context.Context, req resource.CreateReq
 
 	_, httpResp, callErr := r.client.ProfilesAPI.CreateGroupProfile(ctx, r.omadacId, plan.SiteId.ValueString()).
 		CreateGroupOpenApiVO(expandGroup(plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "creating IP-Port group")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "creating IP-Port group")
 	if !ok {
 		return
 	}
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "creating IP-Port group", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "creating IP-Port group", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -291,12 +250,12 @@ func (r *ipPortGroupResource) Update(ctx context.Context, req resource.UpdateReq
 
 	_, httpResp, callErr := r.client.ProfilesAPI.ModifyGroupProfile(ctx, r.omadacId, plan.SiteId.ValueString(), groupTypePort, plan.GroupId.ValueString()).
 		CreateGroupOpenApiVO(expandGroup(plan)).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "updating IP-Port group")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "updating IP-Port group")
 	if !ok {
 		return
 	}
-	if env.hasError() {
-		respondAPIError(&resp.Diagnostics, "updating IP-Port group", env.ErrorCode, env.Msg)
+	if env.HasError() {
+		envelope.AddAPIError(&resp.Diagnostics, "updating IP-Port group", env.ErrorCode, env.Msg)
 		return
 	}
 
@@ -318,7 +277,7 @@ func (r *ipPortGroupResource) Delete(ctx context.Context, req resource.DeleteReq
 	}
 
 	_, httpResp, callErr := r.client.ProfilesAPI.DeleteGroupProfile(ctx, r.omadacId, state.SiteId.ValueString(), state.GroupId.ValueString(), groupTypePort).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, &resp.Diagnostics, "deleting IP-Port group")
+	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "deleting IP-Port group")
 	if !ok {
 		return
 	}
@@ -326,8 +285,8 @@ func (r *ipPortGroupResource) Delete(ctx context.Context, req resource.DeleteReq
 	// A "group does not exist" code is a successful delete. The controller also
 	// rejects deleting a group still referenced by an ACL (-33718); surface that
 	// as an error so the operator removes the reference first.
-	if env.hasError() && env.ErrorCode != nil && !errGroupNotFound[*env.ErrorCode] {
-		respondAPIError(&resp.Diagnostics, "deleting IP-Port group", env.ErrorCode, env.Msg)
+	if env.HasError() && env.ErrorCode != nil && !errGroupNotFound[*env.ErrorCode] {
+		envelope.AddAPIError(&resp.Diagnostics, "deleting IP-Port group", env.ErrorCode, env.Msg)
 		return
 	}
 }
@@ -353,12 +312,12 @@ func (r *ipPortGroupResource) ImportState(ctx context.Context, req resource.Impo
 // bare JSON array under `result`.
 func fetchGroupList(ctx context.Context, diags *diag.Diagnostics, r *ipPortGroupResource, model *ipPortGroupResourceModel) []groupReadRow {
 	_, httpResp, callErr := r.client.ProfilesAPI.GetGroupProfilesByType(ctx, r.omadacId, model.SiteId.ValueString(), groupTypePort).Execute()
-	env, ok := decodeEnvelope(httpResp, callErr, diags, "reading IP-Port group")
+	env, ok := envelope.Decode(httpResp, callErr, diags, "reading IP-Port group")
 	if !ok {
 		return nil
 	}
 
-	if env.hasError() {
+	if env.HasError() {
 		diags.AddError(
 			"Error reading IP-Port group",
 			fmt.Sprintf("Controller rejected the list for site %s, error code %d: %s", model.SiteId.ValueString(), *env.ErrorCode, env.Msg),
@@ -416,18 +375,4 @@ func readGroup(ctx context.Context, diags *diag.Diagnostics, r *ipPortGroupResou
 
 	model.GroupId = types.StringNull()
 	return true
-}
-
-// respondAPIError records a controller-side error (non-zero errorCode) on the
-// given diagnostics.
-func respondAPIError(diags *diag.Diagnostics, action string, code *int32, msg string) {
-	if code == nil {
-		diags.AddError("Error "+action, "Controller rejected the request: "+msg)
-		return
-	}
-
-	diags.AddError(
-		"Error "+action,
-		fmt.Sprintf("Controller rejected the request, error code %d: %s", *code, msg),
-	)
 }
