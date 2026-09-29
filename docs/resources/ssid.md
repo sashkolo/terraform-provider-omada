@@ -64,7 +64,7 @@ output "iot_ssid_id" {
 ### Optional
 
 - `broadcast` (Boolean) Enable SSID broadcast. Defaults to `true`.
-- `device_type` (Number) Target device bitfield. Bit 0 = EAP, bit 1 = Gateway. e.g. `3` targets both (the controller default).
+- `device_type` (Number) Target device bitfield. Bit 0 = EAP, bit 1 = Gateway. e.g. `3` targets both (the controller default). The update endpoint cannot change it, so a change replaces the SSID.
 - `enable_11r` (Boolean) Enable 802.11r fast roaming. Defaults to `false`.
 - `guest_net_enable` (Boolean) Treat this as a guest network (isolates clients). Defaults to `false`.
 - `hide_pwd` (Boolean) Hide the PSK in the controller UI/API where supported. Defaults to `false`. The provider still preserves the PSK in Terraform state regardless of this setting.

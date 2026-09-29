@@ -29,6 +29,8 @@ type fakeLanController struct {
 	// controller does, so the resource must find the network by name.
 	noIdOnCreate bool
 	posts        int
+	patches      int
+	lastPatch    map[string]any // the body of the most recent update
 }
 
 func newFakeLanController(t *testing.T) (*fakeLanController, *acctest.TestServer) {
@@ -67,6 +69,23 @@ func newFakeLanController(t *testing.T) (*fakeLanController, *acctest.TestServer
 		write(w, map[string]any{"errorCode": 0, "msg": "", "result": map[string]any{
 			"totalRows": len(data), "currentPage": 1, "currentSize": 1000, "data": data,
 		}})
+	})
+	ts.Mux.HandleFunc("PATCH /openapi/v1/{omadacId}/sites/{siteId}/lan-networks/{networkId}", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		row, ok := f.rows[r.PathValue("networkId")]
+		if !ok {
+			write(w, map[string]any{"errorCode": -33503, "msg": "The LAN network does not exist."})
+			return
+		}
+		f.patches++
+		f.lastPatch = body
+		for k, v := range body {
+			row[k] = v
+		}
+		write(w, map[string]any{"errorCode": 0, "msg": "Success."})
 	})
 	ts.Mux.HandleFunc("DELETE /openapi/v1/{omadacId}/sites/{siteId}/lan-networks/{networkId}", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
@@ -221,5 +240,13 @@ func TestAcc_LanNetworkCreateReadBackFailsKeepsState(t *testing.T) {
 	defer f.mu.Unlock()
 	if _, orphan := f.rows["net-1"]; orphan {
 		t.Fatal("the network created by the failed apply was orphaned on the controller")
+	}
+}
+
+func (f *fakeLanController) set(fn func(f *fakeLanController)) func() {
+	return func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		fn(f)
 	}
 }

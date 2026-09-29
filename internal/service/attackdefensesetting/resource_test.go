@@ -181,6 +181,12 @@ func TestAcc_AttackDefenseSettingResource(t *testing.T) {
 					resource.TestCheckResourceAttr("omada_attack_defense_setting.test", "ping_wan_enable", "true"),
 				),
 			},
+			// Leaving an optional limit unset keeps the live value: no change is
+			// planned (homelab #515). As plain Optional it planned 300 -> null.
+			{
+				Config:   strings.Replace(config(true), "tcp_conn_limit         = 300\n", "", 1),
+				PlanOnly: true,
+			},
 			// Delete is a no-op (exercised automatically by the harness).
 		},
 	})

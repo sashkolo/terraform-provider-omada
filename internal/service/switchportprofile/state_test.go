@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"sync"
 	"terraform-provider-omada/internal/acctest"
 	"testing"
@@ -92,6 +93,10 @@ resource "omada_switch_port_profile" "test" {
 	name               = "Outdoor-Untrusted"
 	native_network_id  = "net-outdoor"
 	tagged_network_ids = []
+	port_isolation_enable  = false
+	lldp_med_enable        = true
+	loopback_detect_enable = false
+	spanning_tree_enable   = false
 }
 `
 
@@ -142,6 +147,30 @@ func TestAcc_SwitchPortProfileCreateReadBackLagKeepsId(t *testing.T) {
 			{
 				Config: ts.ProviderConfig + stateTestProfile,
 				Check:  resource.TestCheckResourceAttr("omada_switch_port_profile.test", "profile_id", "profile-1"),
+			},
+		},
+	})
+}
+
+// Creating a profile with the protective toggles unset must be refused: the
+// SDK sends them as plain booleans, so on 0.14.0 the profile was created with
+// STP, loopback detection and isolation off (homelab #515).
+func TestAcc_SwitchPortProfileCreateRequiresToggles(t *testing.T) {
+	_, ts := newFakeProfileController(t)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: ts.ProviderConfig + `
+resource "omada_switch_port_profile" "test" {
+	site_id            = "test-site-id"
+	name               = "Outdoor-Untrusted"
+	native_network_id  = "net-outdoor"
+	tagged_network_ids = []
+}
+`,
+				ExpectError: regexp.MustCompile(`spanning_tree_enable must be set when creating a profile`),
 			},
 		},
 	})

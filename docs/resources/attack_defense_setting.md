@@ -79,24 +79,24 @@ resource "omada_attack_defense_setting" "default" {
 
 ### Optional
 
-- `icmp_conn_limit` (Number) ICMP connection-rate flood threshold (per second).
-- `icmp_src_limit` (Number) ICMP source-rate flood threshold (per second).
-- `icmp_timestamp_request_reject` (Boolean) Whether to reject ICMP timestamp requests.
-- `large_ping_threshold` (Number) Large-ping size threshold (bytes).
+- `icmp_conn_limit` (Number) ICMP connection-rate flood threshold (per second). When unset, the live value is kept.
+- `icmp_src_limit` (Number) ICMP source-rate flood threshold (per second). When unset, the live value is kept.
+- `icmp_timestamp_request_reject` (Boolean) Whether to reject ICMP timestamp requests. When unset, the live value is kept.
+- `large_ping_threshold` (Number) Large-ping size threshold (bytes). When unset, the live value is kept.
 - `specified_option` (Attributes) Per-IP-option attack-defense toggles. Meaningful when specified_option_enable is true. (see [below for nested schema](#nestedatt--specified_option))
-- `tcp_conn_limit` (Number) TCP connection-rate flood threshold (per second).
-- `tcp_scan_reject` (Boolean) Whether to reject detected TCP scans.
-- `tcp_src_limit` (Number) TCP source-rate flood threshold (per second).
-- `udp_conn_limit` (Number) UDP connection-rate flood threshold (per second).
-- `udp_src_limit` (Number) UDP source-rate flood threshold (per second).
+- `tcp_conn_limit` (Number) TCP connection-rate flood threshold (per second). When unset, the live value is kept.
+- `tcp_scan_reject` (Boolean) Whether to reject detected TCP scans. When unset, the live value is kept.
+- `tcp_src_limit` (Number) TCP source-rate flood threshold (per second). When unset, the live value is kept.
+- `udp_conn_limit` (Number) UDP connection-rate flood threshold (per second). When unset, the live value is kept.
+- `udp_src_limit` (Number) UDP source-rate flood threshold (per second). When unset, the live value is kept.
 
 <a id="nestedatt--specified_option"></a>
 ### Nested Schema for `specified_option`
 
 Optional:
 
-- `no_operation_enable` (Boolean) Reject packets with the IP No Operation option.
-- `record_route_enable` (Boolean) Reject packets with the IP Record Route option.
-- `security_option_enable` (Boolean) Reject packets with the IP Security option.
-- `stream_enable` (Boolean) Reject packets with the IP Stream option.
-- `timestamp_enable` (Boolean) Reject packets with the IP Timestamp option.
+- `no_operation_enable` (Boolean) Reject packets with the IP No Operation option. When unset, the live value is kept.
+- `record_route_enable` (Boolean) Reject packets with the IP Record Route option. When unset, the live value is kept.
+- `security_option_enable` (Boolean) Reject packets with the IP Security option. When unset, the live value is kept.
+- `stream_enable` (Boolean) Reject packets with the IP Stream option. When unset, the live value is kept.
+- `timestamp_enable` (Boolean) Reject packets with the IP Timestamp option. When unset, the live value is kept.

@@ -14,6 +14,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -110,50 +112,96 @@ func (r *ssidResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Description: "Enable SSID broadcast. Defaults to `true`.",
 				Optional:    true,
 				Computed:    true,
+				// Unset in config means "keep the live value": without this the value is
+				// unknown on update and a hard-coded default is sent (homelab #515).
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"guest_net_enable": schema.BoolAttribute{
 				Description: "Treat this as a guest network (isolates clients). Defaults to `false`.",
 				Optional:    true,
 				Computed:    true,
+				// Unset in config means "keep the live value": without this the value is
+				// unknown on update and a hard-coded default is sent (homelab #515).
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"enable_11r": schema.BoolAttribute{
 				Description: "Enable 802.11r fast roaming. Defaults to `false`.",
 				Optional:    true,
 				Computed:    true,
+				// Unset in config means "keep the live value": without this the value is
+				// unknown on update and a hard-coded default is sent (homelab #515).
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"hide_pwd": schema.BoolAttribute{
 				Description: "Hide the PSK in the controller UI/API where supported. Defaults to `false`. " +
 					"The provider still preserves the PSK in Terraform state regardless of this setting.",
 				Optional: true,
 				Computed: true,
+				// Unset in config means "keep the live value": without this the value is
+				// unknown on update and a hard-coded default is sent (homelab #515).
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"mlo_enable": schema.BoolAttribute{
 				Description: "Enable Wi-Fi 7 multi-link operation. Defaults to `false`.",
 				Optional:    true,
 				Computed:    true,
+				// Unset in config means "keep the live value": without this the value is
+				// unknown on update and a hard-coded default is sent (homelab #515).
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"pmf_mode": schema.Int32Attribute{
 				Description: "Protected Management Frames mode. `1` = Mandatory, `2` = Capable (default), " +
 					"`3` = Disable.",
 				Optional: true,
 				Computed: true,
+				// Unset in config means "keep the live value": without this the value is
+				// unknown on update and a hard-coded default is sent (homelab #515).
+				PlanModifiers: []planmodifier.Int32{
+					int32planmodifier.UseStateForUnknown(),
+				},
 			},
 			"device_type": schema.Int32Attribute{
 				Description: "Target device bitfield. Bit 0 = EAP, bit 1 = Gateway. e.g. `3` targets both " +
-					"(the controller default).",
+					"(the controller default). The update endpoint cannot change it, so a change replaces the SSID.",
 				Optional: true,
 				Computed: true,
+				// Unset in config means "keep the live value": without this the value is
+				// unknown on update and a hard-coded default is sent (homelab #515).
+				PlanModifiers: []planmodifier.Int32{
+					int32planmodifier.RequiresReplace(),
+					int32planmodifier.UseStateForUnknown(),
+				},
 			},
 			"vlan_enable": schema.BoolAttribute{
 				Description: "Tag client traffic to a VLAN. When `true`, `vlan_id` must be set. " +
 					"Defaults to `false`.",
 				Optional: true,
 				Computed: true,
+				// Unset in config means "keep the live value": without this the value is
+				// unknown on update and a hard-coded default is sent (homelab #515).
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"vlan_id": schema.Int32Attribute{
 				Description: "802.1Q VLAN tag for this SSID. Required and only sent when `vlan_enable` is `true`. " +
 					"Must be in the range 1-4094.",
 				Optional: true,
+				// Computed: the controller can report a tag while tagging is off.
+				Computed: true,
+				PlanModifiers: []planmodifier.Int32{
+					int32planmodifier.UseStateForUnknown(),
+				},
 			},
 			"psk_setting": schema.SingleNestedAttribute{
 				Description: "WPA-Personal key material. Required for security mode `3`; omit for open/enterprise.",
@@ -170,16 +218,31 @@ func (r *ssidResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 						Description: "PSK cipher. Defaults to `3` (the controller default on 5.15.x).",
 						Optional:    true,
 						Computed:    true,
+						// Unset in config means "keep the live value": without this the value is
+						// unknown on update and a hard-coded default is sent (homelab #515).
+						PlanModifiers: []planmodifier.Int32{
+							int32planmodifier.UseStateForUnknown(),
+						},
 					},
 					"psk_version": schema.Int32Attribute{
 						Description: "PSK version. Defaults to `4` (WPA2/WPA3 Personal compatibility).",
 						Optional:    true,
 						Computed:    true,
+						// Unset in config means "keep the live value": without this the value is
+						// unknown on update and a hard-coded default is sent (homelab #515).
+						PlanModifiers: []planmodifier.Int32{
+							int32planmodifier.UseStateForUnknown(),
+						},
 					},
 					"gik_rekey_psk_enable": schema.BoolAttribute{
 						Description: "Enable group key rekey. Defaults to `false`.",
 						Optional:    true,
 						Computed:    true,
+						// Unset in config means "keep the live value": without this the value is
+						// unknown on update and a hard-coded default is sent (homelab #515).
+						PlanModifiers: []planmodifier.Bool{
+							boolplanmodifier.UseStateForUnknown(),
+						},
 					},
 				},
 			},
@@ -296,8 +359,25 @@ func (r *ssidResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	plan.SiteId = state.SiteId
 	plan.WlanGroupId = state.WlanGroupId
 
+	// Read-modify-write: settings the resource doesn't model are sent back with
+	// their live values rather than left to the endpoint's defaults (homelab
+	// #515). greEnable, oweEnable and prohibitWifiShare are not returned by the
+	// detail read on 6.2.10, so they can't be carried; greEnable is still sent
+	// as false because the endpoint rejects a body without it.
+	live, refused := getSsidDetail(ctx, &resp.Diagnostics, r, &plan)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if live == nil {
+		resp.Diagnostics.AddError("Error updating SSID", refused)
+		return
+	}
+
+	body := expandUpdateSsid(plan)
+	body.AutoWanAccess = live.AutoWanAccess
+
 	_, httpResp, callErr := r.client.WirelessNetworkAPI.UpdateSsidBasicConfig(ctx, r.omadacId, plan.SiteId.ValueString(), plan.WlanGroupId.ValueString(), plan.SsidId.ValueString()).
-		UpdateSsidBasicConfigOpenApiVO(expandUpdateSsid(plan)).Execute()
+		UpdateSsidBasicConfigOpenApiVO(body).Execute()
 	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "updating SSID")
 	if !ok {
 		return

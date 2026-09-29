@@ -39,8 +39,13 @@ func expandDhcpSettings(s *dhcpSettingsModel) *omada.DhcpSettings {
 }
 
 // expandInterfaceIds converts the Terraform list of interface IDs (gateway LAN
-// port IDs) into the SDK slice. Returns nil when none are configured.
+// port IDs) into the SDK slice. An unset list returns nil, which the SDK omits,
+// so the controller keeps the network's ports; before, it sent [], which asks
+// to unbind every port (homelab #515). An explicit [] is still sent.
 func expandInterfaceIds(ids []types.String) []string {
+	if ids == nil {
+		return nil
+	}
 	out := make([]string, 0, len(ids))
 	for _, id := range ids {
 		if id.IsNull() || id.IsUnknown() {

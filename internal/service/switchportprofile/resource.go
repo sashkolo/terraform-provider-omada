@@ -196,6 +196,26 @@ func (r *switchPortProfileResource) Create(ctx context.Context, req resource.Cre
 		return
 	}
 
+	// The SDK sends these toggles as plain booleans, so an unset one would
+	// create the profile with that protection off rather than at the
+	// controller's default. Require them on create (homelab #515); an imported
+	// profile keeps its live values through UseStateForUnknown.
+	for name, v := range map[string]types.Bool{
+		"spanning_tree_enable":   plan.SpanningTreeEnable,
+		"loopback_detect_enable": plan.LoopbackDetectEnable,
+		"port_isolation_enable":  plan.PortIsolationEnable,
+		"lldp_med_enable":        plan.LldpMedEnable,
+	} {
+		if v.IsNull() || v.IsUnknown() {
+			resp.Diagnostics.AddAttributeError(path.Root(name), "Missing switch port profile setting",
+				name+" must be set when creating a profile: left unset, the profile would be created with it "+
+					"off, not at the controller's default.")
+		}
+	}
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	_, httpResp, callErr := r.client.WiredNetworkAPI.CreateLanProfile(ctx, r.omadacId, plan.SiteId.ValueString()).
 		LanProfileConfigOpenApiVO(expandProfile(ctx, plan)).Execute()
 	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "creating switch port profile")

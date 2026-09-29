@@ -51,13 +51,13 @@ output "example_network_id" {
 - `gateway_subnet` (String) Gateway address and mask in CIDR (`IP/Mask`) form, e.g. `192.168.199.1/24`. Required for purpose `interface`; the gateway terminates this VLAN.
 - `name` (String) LAN network name. Must contain 1 to 128 characters and be unique within the site.
 - `site_id` (String) Site ID to create the network in. Changing this forces replacement.
-- `vlan_id` (Number) 802.1Q VLAN tag for this network. Must be in the range 1-4094 and unused by any other network or WAN interface. Changing this forces replacement.
+- `vlan_id` (Number) 802.1Q VLAN tag for this network. Must be in the range 1-4094 and unused by any other network or WAN interface. Changed in place: replacing the network would delete it, with everything that references it, before the new one exists (homelab #515).
 
 ### Optional
 
 - `dhcp_settings` (Attributes) Gateway-served DHCP configuration. Omit for a VLAN with no DHCP served by the gateway. (see [below for nested schema](#nestedatt--dhcp_settings))
 - `domain` (String) Domain name advertised for this network.
-- `igmp_snoop_enable` (Boolean) Enable IGMP snooping on this network. Defaults to `false`.
+- `igmp_snoop_enable` (Boolean) Enable IGMP snooping on this network. Defaults to `false` on create; when unset, an update keeps the live value.
 - `interface_ids` (List of String) Gateway LAN port IDs the network binds to (from the controller's WAN/LAN status endpoint). Required for purpose `interface`; the controller rejects creation with no ports.
 - `purpose` (Number) LAN network purpose. `1` = interface (the default; a gateway-terminated network with a gateway_subnet), `0` = VLAN only. Changing this forces replacement.
 
