@@ -70,9 +70,12 @@ provider "omada" {
 
 ### Optional
 
+- `ca_cert_pem` (String) PEM CA certificate(s) to trust instead of the system roots, with normal host-name verification. May also be provided via `OMADA_CA_CERT_PEM`.
 - `client_id` (String) Client ID for the Omada Controller Application. May also be provided via `OMADA_CLIENT_ID` environment variable.
 - `client_secret` (String, Sensitive) Client Secret for the Omada Controller Application. May also be provided via `OMADA_CLIENT_SECRET` environment variable.
 - `controller_id` (String) Unique ID assigned to the Omada Controller. May also be provided via `OMADA_CONTROLLER_ID` environment variable.
 - `host` (String) URI for the Omada Controller API. May also be provided via `OMADA_HOST` environment variable.
+- `request_timeout` (Number) Timeout for each controller request, in seconds. Defaults to 60. May also be provided via `OMADA_REQUEST_TIMEOUT`.
+- `tls_server_sha256` (String) SHA-256 fingerprint of the controller's certificate (64 hex digits; colons and case are ignored). Only that certificate is accepted; this replaces `tls_skip_verify` for a self-signed controller. Get it with `openssl s_client -connect HOST:443 </dev/null | openssl x509 -noout -fingerprint -sha256`. May also be provided via `OMADA_TLS_SERVER_SHA256`.
 - `tls_skip_verify` (Boolean) When set to true, accepts any certificate presented by the server and any host name in that certificate.
 				**It is unadvisable to use this in a production environment, as it makes the provider susceptible to man-in-the-middle attacks.**

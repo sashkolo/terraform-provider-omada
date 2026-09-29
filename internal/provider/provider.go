@@ -2,8 +2,6 @@ package provider
 
 import (
 	"context"
-	"crypto/tls"
-	"net/http"
 	"os"
 	"strconv"
 	"terraform-provider-omada/internal/client"
@@ -22,6 +20,7 @@ import (
 	"terraform-provider-omada/internal/service/switchport"
 	"terraform-provider-omada/internal/service/switchportprofile"
 	"terraform-provider-omada/internal/service/wlangroup"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -61,6 +60,9 @@ type omadaProviderModel struct {
 	ClientId      types.String `tfsdk:"client_id"`
 	ClientSecret  types.String `tfsdk:"client_secret"`
 	TlsSkipVerify types.Bool   `tfsdk:"tls_skip_verify"`
+	TlsServerSha  types.String `tfsdk:"tls_server_sha256"`
+	CaCertPem     types.String `tfsdk:"ca_cert_pem"`
+	Timeout       types.Int64  `tfsdk:"request_timeout"`
 }
 
 // Metadata returns the provider type name.
@@ -94,6 +96,23 @@ func (p *omadaProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp
 			"tls_skip_verify": schema.BoolAttribute{
 				Description: `When set to true, accepts any certificate presented by the server and any host name in that certificate.
 				**It is unadvisable to use this in a production environment, as it makes the provider susceptible to man-in-the-middle attacks.**`,
+				Optional: true,
+			},
+			"tls_server_sha256": schema.StringAttribute{
+				Description: "SHA-256 fingerprint of the controller's certificate (64 hex digits; colons and case " +
+					"are ignored). Only that certificate is accepted; this replaces `tls_skip_verify` for a " +
+					"self-signed controller. Get it with `openssl s_client -connect HOST:443 </dev/null | " +
+					"openssl x509 -noout -fingerprint -sha256`. May also be provided via `OMADA_TLS_SERVER_SHA256`.",
+				Optional: true,
+			},
+			"ca_cert_pem": schema.StringAttribute{
+				Description: "PEM CA certificate(s) to trust instead of the system roots, with normal host-name " +
+					"verification. May also be provided via `OMADA_CA_CERT_PEM`.",
+				Optional: true,
+			},
+			"request_timeout": schema.Int64Attribute{
+				Description: "Timeout for each controller request, in seconds. Defaults to 60. May also be provided " +
+					"via `OMADA_REQUEST_TIMEOUT`.",
 				Optional: true,
 			},
 		},
@@ -195,6 +214,31 @@ func (p *omadaProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		tls_skip_verify = config.TlsSkipVerify.ValueBool()
 	}
 
+	tlsServerSha := os.Getenv("OMADA_TLS_SERVER_SHA256")
+	if !config.TlsServerSha.IsNull() && !config.TlsServerSha.IsUnknown() {
+		tlsServerSha = config.TlsServerSha.ValueString()
+	}
+	caCertPem := os.Getenv("OMADA_CA_CERT_PEM")
+	if !config.CaCertPem.IsNull() && !config.CaCertPem.IsUnknown() {
+		caCertPem = config.CaCertPem.ValueString()
+	}
+	timeout := defaultRequestTimeout
+	if v := os.Getenv("OMADA_REQUEST_TIMEOUT"); v != "" {
+		secs, err := strconv.Atoi(v)
+		if err != nil || secs <= 0 {
+			resp.Diagnostics.AddError("Invalid OMADA_REQUEST_TIMEOUT", "Expected a positive number of seconds, got "+strconv.Quote(v)+".")
+			return
+		}
+		timeout = time.Duration(secs) * time.Second
+	}
+	if !config.Timeout.IsNull() && !config.Timeout.IsUnknown() {
+		if config.Timeout.ValueInt64() <= 0 {
+			resp.Diagnostics.AddAttributeError(path.Root("request_timeout"), "Invalid request_timeout", "Expected a positive number of seconds.")
+			return
+		}
+		timeout = time.Duration(config.Timeout.ValueInt64()) * time.Second
+	}
+
 	// If any of the expected configurations are missing, return
 	// errors with provider-specific guidance.
 
@@ -255,10 +299,14 @@ func (p *omadaProvider) Configure(ctx context.Context, req provider.ConfigureReq
 
 	tflog.Debug(ctx, "Creating Omada client")
 
-	httpClient := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: tls_skip_verify},
-		},
+	httpClient, err := buildHTTPClient(tlsOptions{
+		skipVerify:   tls_skip_verify,
+		serverSHA256: tlsServerSha,
+		caCertPEM:    caCertPem,
+	}, timeout)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid controller TLS settings", err.Error())
+		return
 	}
 
 	meta, err := client.New(ctx, client.Config{
