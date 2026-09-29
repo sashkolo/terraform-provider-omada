@@ -198,7 +198,7 @@ func (r *switchPortProfileResource) Create(ctx context.Context, req resource.Cre
 
 	// The SDK sends these toggles as plain booleans, so an unset one would
 	// create the profile with that protection off rather than at the
-	// controller's default. Require them on create (homelab #515); an imported
+	// controller's default. Require them on create; an imported
 	// profile keeps its live values through UseStateForUnknown.
 	for name, v := range map[string]types.Bool{
 		"spanning_tree_enable":   plan.SpanningTreeEnable,
@@ -236,7 +236,7 @@ func (r *switchPortProfileResource) Create(ctx context.Context, req resource.Cre
 		}
 	}
 	// profile_id is Computed, so it is Unknown (not Null) at create time. Treat
-	// both as "not yet known" so the name-based fallback runs (homelab #514).
+	// both as "not yet known" so the name-based fallback runs.
 	if (plan.ProfileId.IsUnknown() || plan.ProfileId.IsNull()) && !awaitFindProfileByName(ctx, &resp.Diagnostics, r, &plan) {
 		resp.Diagnostics.AddError(
 			"Error creating switch port profile",
@@ -247,7 +247,7 @@ func (r *switchPortProfileResource) Create(ctx context.Context, req resource.Cre
 
 	if !awaitReadProfile(ctx, &resp.Diagnostics, r, &plan) {
 		// The profile exists on the controller: keep it in state (tainted)
-		// with the id the POST returned rather than a null id (homelab #514).
+		// with the id the POST returned rather than a null id.
 		resp.Diagnostics.Append(tfstate.SaveCreated(ctx, req.Plan, &resp.State, "profile_id", plan.ProfileId.ValueString())...)
 		resp.Diagnostics.AddError(
 			"Error creating switch port profile",
@@ -344,7 +344,7 @@ func (r *switchPortProfileResource) Delete(ctx context.Context, req resource.Del
 	// already gone, which is the desired end state.
 	if env.HasError() && env.Code() != errProfileNotFound {
 		// Any other controller error is still success when a confirmed re-list
-		// shows the profile absent (homelab #514).
+		// shows the profile absent.
 		var listDiags diag.Diagnostics
 		if _, found := findProfileConfirmed(ctx, &listDiags, r, &state); !listDiags.HasError() && !found {
 			return
@@ -434,7 +434,7 @@ const goneConfirmations = 3
 
 // awaitReadProfile retries the list read until the profile is present,
 // refreshing the model in place. It never clears profile_id: Create and Update
-// already know the id (homelab #514). Only the last attempt's diagnostics are
+// already know the id. Only the last attempt's diagnostics are
 // kept.
 func awaitReadProfile(ctx context.Context, diags *diag.Diagnostics, r *switchPortProfileResource, model *switchPortProfileResourceModel) bool {
 	ok, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {

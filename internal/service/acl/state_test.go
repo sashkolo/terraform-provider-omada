@@ -12,7 +12,7 @@ import (
 )
 
 // fakeAclController models the parts of the controller that state accuracy
-// depends on (homelab #514): a list that is the only way to read a rule, a
+// depends on: a list that is the only way to read a rule, a
 // DELETE that fails with a controller error when the rule is already gone, and
 // switches to delete a rule behind Terraform's back or to hide it from lists.
 type fakeAclController struct {
@@ -94,7 +94,7 @@ func (f *fakeAclController) setHidden(v bool) {
 const stateTestAcl = `
 resource "omada_acl" "test" {
 	site_id          = "test-site-id"
-	description      = "Outdoor deny"
+	description      = "Untrusted deny"
 	source_type      = 0
 	source_ids       = ["net-a"]
 	destination_type = 0

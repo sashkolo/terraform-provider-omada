@@ -19,7 +19,7 @@ func tlsServer(t *testing.T, h http.HandlerFunc) (*httptest.Server, string) {
 }
 
 // A pinned controller certificate is accepted without tls_skip_verify, in the
-// colon-separated upper-case form openssl prints (homelab #516).
+// colon-separated upper-case form openssl prints.
 func TestBuildHTTPClientAcceptsThePinnedCertificate(t *testing.T) {
 	srv, pin := tlsServer(t, func(w http.ResponseWriter, _ *http.Request) {})
 	var colons []string

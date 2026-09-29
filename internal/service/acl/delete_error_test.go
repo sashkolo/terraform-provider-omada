@@ -10,7 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
-// TestAcc_AclDeleteHTTPErrorWithoutErrorCode is the homelab #235 regression: a
+// TestAcc_AclDeleteHTTPErrorWithoutErrorCode is a regression test: a
 // DELETE answered with HTTP 500 and a JSON error page that carries no errorCode
 // (a Spring or reverse-proxy error body) used to count as success, so destroy
 // dropped the rule from state while it stayed live and unmanaged. The destroy

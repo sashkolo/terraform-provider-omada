@@ -13,7 +13,7 @@ import (
 )
 
 // fakeGroupController models the parts of the controller that state accuracy
-// depends on (homelab #514): a per-type list that is the only way to read a
+// depends on: a per-type list that is the only way to read a
 // group and that is eventually consistent after a write.
 type fakeGroupController struct {
 	mu   sync.Mutex
@@ -83,9 +83,9 @@ func (f *fakeGroupController) set(fn func(f *fakeGroupController)) {
 const stateTestGroup = `
 resource "omada_ip_group" "test" {
 	site_id = "test-site-id"
-	name    = "vigi-cameras"
+	name    = "camera-hosts"
 	ip_list = [
-		{ ip = "192.168.30.0", mask = 24 },
+		{ ip = "192.168.100.0", mask = 24 },
 	]
 }
 `

@@ -43,7 +43,7 @@ type ssidDetailReadVO struct {
 	DeviceType     *int32     `json:"deviceType"`
 	PskSetting     *pskReadVO `json:"pskSetting"`
 	// AutoWanAccess is not modeled; Update sends the live value back so an edit
-	// can't change it (homelab #515).
+	// can't change it.
 	AutoWanAccess *bool `json:"autoWanAccess"`
 }
 

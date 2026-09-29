@@ -122,7 +122,7 @@ func requiredBool(desc string) schema.BoolAttribute {
 }
 
 // optionalBool and optionalInt32 are Optional+Computed and keep their state
-// value when unset (homelab #515). As plain Optional, a value the controller
+// value when unset. As plain Optional, a value the controller
 // returned but the config left unset made the apply fail with an inconsistent
 // result or plan a perpetual change to null, and removing one from config left
 // the live value in place while the plan claimed to clear it. Unset now means

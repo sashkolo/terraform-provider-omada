@@ -10,7 +10,7 @@ import (
 
 // A transient error followed by success must leave no error behind; the
 // per-resource loops this replaces kept every failed attempt's diagnostic, so
-// the apply failed anyway (homelab #514).
+// the apply failed anyway.
 func TestUntilKeepsOnlyTheLastAttempt(t *testing.T) {
 	calls := 0
 	ok, diags := Until(context.Background(), 3, time.Millisecond, func(d *diag.Diagnostics) bool {

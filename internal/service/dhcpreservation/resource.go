@@ -164,7 +164,7 @@ func (r *reservationResource) Create(ctx context.Context, req resource.CreateReq
 		// The POST succeeded, so the reservation exists on the controller: keep
 		// it in state (tainted) under its MAC, the key Delete addresses, rather
 		// than orphaning it. A re-apply then replaces it instead of failing on a
-		// duplicate MAC (homelab #514).
+		// duplicate MAC.
 		resp.Diagnostics.Append(tfstate.SaveCreated(ctx, req.Plan, &resp.State, "mac", plan.Mac.ValueString())...)
 		if !plan.ReservationId.IsUnknown() && !plan.ReservationId.IsNull() {
 			resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("reservation_id"), plan.ReservationId)...)
@@ -193,7 +193,7 @@ func (r *reservationResource) Read(ctx context.Context, req resource.ReadRequest
 	}
 
 	// A miss is re-checked before it is believed, because the grid is eventually
-	// consistent; a list error is not evidence of absence (homelab #514).
+	// consistent; a list error is not evidence of absence.
 	found, last := retry.Until(ctx, goneConfirmations, retry.Interval, func(d *diag.Diagnostics) bool {
 		return readReservation(ctx, d, r, &state) || d.HasError()
 	})

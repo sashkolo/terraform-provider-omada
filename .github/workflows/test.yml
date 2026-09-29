@@ -34,12 +34,12 @@ jobs:
       - name: Run linters
         uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
         with:
-          # Pinned (homelab #513): `latest` let a new linter release fail an
+          # Pinned: `latest` let a new linter release fail an
           # unchanged tree.
           version: v2.14.0
 
   # Reachable known vulnerabilities in the module graph and the Go toolchain
-  # the release is built with (the go directive in go.mod). homelab #513.
+  # the release is built with (the go directive in go.mod).
   govulncheck:
     name: govulncheck
     runs-on: ubuntu-latest
@@ -97,8 +97,8 @@ jobs:
       - run: go mod download
       - run: make testacc
 
-  # The homelab consumes this provider with OpenTofu, not Terraform, so the same
-  # suite runs against the OpenTofu CLI too (homelab #513).
+  # The same suite runs against the OpenTofu CLI too, so the provider is proven
+  # on both.
   test-opentofu:
     name: "Acceptance Tests: OpenTofu ${{ matrix.opentofu }}"
     needs: build

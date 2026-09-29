@@ -86,7 +86,7 @@ func (r *switchPortResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				},
 			},
 			"switch_mac": schema.StringAttribute{
-				Description: "MAC address of the switch (e.g. `E4-FA-C4-9E-CD-87`). Changing this forces replacement.",
+				Description: "MAC address of the switch (e.g. `00-00-5E-00-53-01`). Changing this forces replacement.",
 				Required:    true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
@@ -335,7 +335,7 @@ func readPort(ctx context.Context, diags *diag.Diagnostics, r *switchPortResourc
 	if env.Code() == errDeviceNotFound {
 		// The switch was removed from the controller. Erroring here would fail
 		// every refresh forever; the port cannot exist without its switch, so
-		// report it gone (homelab #514).
+		// report it gone.
 		model.ProfileId = types.StringNull()
 		return true
 	}

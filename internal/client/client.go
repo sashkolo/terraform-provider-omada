@@ -23,7 +23,7 @@ type Meta struct {
 // and returns an SDK client whose every request carries a current token. The
 // token is renewed before it expires and once more if the controller reports it
 // expired or invalid, so a plan and apply longer than the token's lifetime
-// (7200 s on 6.2.10) no longer fails half way (homelab #516).
+// (7200 s on 6.2.10) no longer fails half way.
 func New(ctx context.Context, cfg Config) (*Meta, error) {
 	base := cfg.HTTPClient
 	if base == nil {

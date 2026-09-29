@@ -23,11 +23,11 @@ variable "site_id" {
 # switch, port 8 is the UI's "1/0/8". The port's VLAN posture is governed by the
 # referenced profile, so an access/untagged profile with no tagged VLANs keeps an
 # exposed port off every sensitive VLAN.
-resource "omada_switch_port" "outdoor" {
+resource "omada_switch_port" "untrusted" {
   site_id    = var.site_id
-  switch_mac = "E4-FA-C4-9E-CD-87"
+  switch_mac = "00-00-5E-00-53-01"
   port       = 8
-  profile_id = "<outdoor-untrusted-profile-id>"
+  profile_id = "<untrusted-profile-id>"
 }
 ```
 
@@ -39,7 +39,7 @@ resource "omada_switch_port" "outdoor" {
 - `port` (Number) Physical port number on the switch (for a non-stacked switch, port `8` is the UI's `1/0/8`). Changing this forces replacement.
 - `profile_id` (String) ID of the omada_switch_port_profile the port is assigned to. This selects the port's VLAN posture (access vs trunk, native/tagged VLANs).
 - `site_id` (String) Site ID the switch belongs to. Changing this forces replacement.
-- `switch_mac` (String) MAC address of the switch (e.g. `E4-FA-C4-9E-CD-87`). Changing this forces replacement.
+- `switch_mac` (String) MAC address of the switch (e.g. `00-00-5E-00-53-01`). Changing this forces replacement.
 
 ### Optional
 
@@ -63,5 +63,5 @@ The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/c
 
 ```shell
 # A switch port is imported as <site_id>/<switch_mac>/<port>.
-terraform import omada_switch_port.outdoor 638ef75473919c1e1734f763/E4-FA-C4-9E-CD-87/8
+terraform import omada_switch_port.untrusted 64b000000000000000000001/00-00-5E-00-53-01/8
 ```

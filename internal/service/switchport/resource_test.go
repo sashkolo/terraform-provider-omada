@@ -21,12 +21,12 @@ func TestAcc_SwitchPortResource(t *testing.T) {
 	mux := ts.Mux
 
 	// portRow is the single port entry returned inside the switch-overview
-	// portList. It models Main Switch port 8 assigned to Outdoor-Untrusted.
+	// portList. It models Main Switch port 8 assigned to Untrusted.
 	portRow := map[string]any{
 		"port":                  int32(8),
 		"name":                  "Port8",
 		"profileId":             "test-profile-id",
-		"profileName":           "Outdoor-Untrusted",
+		"profileName":           "Untrusted",
 		"profileOverrideEnable": true,
 		"poeMode":               int32(1),
 		"status":                int32(1),
@@ -38,7 +38,7 @@ func TestAcc_SwitchPortResource(t *testing.T) {
 			"errorCode": 0,
 			"msg":       "",
 			"result": map[string]any{
-				"mac":      "E4-FA-C4-9E-CD-87",
+				"mac":      "00-00-5E-00-53-01",
 				"portList": []any{portRow},
 			},
 		})
@@ -96,8 +96,8 @@ func TestAcc_SwitchPortResource(t *testing.T) {
 	// are access profiles (type 2, nothing tagged), so the move is allowed.
 	mux.HandleFunc("GET /openapi/v1/{omadacId}/sites/{siteId}/lan-profiles", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, `{"errorCode":0,"msg":"","result":{"totalRows":2,"currentPage":1,"currentSize":1000,"data":[`+
-			`{"id":"test-profile-id","name":"Outdoor","type":2,"tagNetworkIds":[]},`+
-			`{"id":"test-profile-id-2","name":"Outdoor 2","type":2,"tagNetworkIds":[]}]}}`)
+			`{"id":"test-profile-id","name":"Untrusted","type":2,"tagNetworkIds":[]},`+
+			`{"id":"test-profile-id-2","name":"Untrusted 2","type":2,"tagNetworkIds":[]}]}}`)
 	})
 
 	resource.Test(t, resource.TestCase{
@@ -108,17 +108,17 @@ func TestAcc_SwitchPortResource(t *testing.T) {
 				Config: ts.ProviderConfig + `
 				resource "omada_switch_port" "test" {
 					site_id    = "test-site-id"
-					switch_mac = "E4-FA-C4-9E-CD-87"
+					switch_mac = "00-00-5E-00-53-01"
 					port       = 8
 					profile_id = "test-profile-id"
 				}
 				`,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("omada_switch_port.test", "site_id", "test-site-id"),
-					resource.TestCheckResourceAttr("omada_switch_port.test", "switch_mac", "E4-FA-C4-9E-CD-87"),
+					resource.TestCheckResourceAttr("omada_switch_port.test", "switch_mac", "00-00-5E-00-53-01"),
 					resource.TestCheckResourceAttr("omada_switch_port.test", "port", "8"),
 					resource.TestCheckResourceAttr("omada_switch_port.test", "profile_id", "test-profile-id"),
-					resource.TestCheckResourceAttr("omada_switch_port.test", "profile_name", "Outdoor-Untrusted"),
+					resource.TestCheckResourceAttr("omada_switch_port.test", "profile_name", "Untrusted"),
 					resource.TestCheckResourceAttr("omada_switch_port.test", "profile_override_enable", "true"),
 					resource.TestCheckResourceAttr("omada_switch_port.test", "poe", "1"),
 					resource.TestCheckResourceAttr("omada_switch_port.test", "disabled", "false"),
@@ -131,7 +131,7 @@ func TestAcc_SwitchPortResource(t *testing.T) {
 				ResourceName:                         "omada_switch_port.test",
 				ImportState:                          true,
 				ImportStateVerify:                    true,
-				ImportStateId:                        "test-site-id/E4-FA-C4-9E-CD-87/8",
+				ImportStateId:                        "test-site-id/00-00-5E-00-53-01/8",
 				ImportStateVerifyIdentifierAttribute: "profile_id",
 			},
 			// Update the profile assignment in place.
@@ -139,7 +139,7 @@ func TestAcc_SwitchPortResource(t *testing.T) {
 				Config: ts.ProviderConfig + `
 				resource "omada_switch_port" "test" {
 					site_id    = "test-site-id"
-					switch_mac = "E4-FA-C4-9E-CD-87"
+					switch_mac = "00-00-5E-00-53-01"
 					port       = 8
 					profile_id = "test-profile-id-2"
 				}

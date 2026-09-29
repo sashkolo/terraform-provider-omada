@@ -42,14 +42,14 @@ func TestAcc_DhcpReservationResource(t *testing.T) {
 	mux := ts.Mux
 
 	// row is the single reservation returned by the grid endpoint. It models the
-	// VIGI South camera reserved at 192.168.30.21.
+	// Porch camera camera reserved at 192.168.100.21.
 	row := map[string]any{
 		"id":          "test-reservation-id",
-		"mac":         "48-22-54-C3-4C-DE",
-		"ip":          "192.168.30.21",
-		"netId":       "outdoor-net-id",
-		"netName":     "Outdoor-Untrusted",
-		"description": "VIGI South",
+		"mac":         "00-00-5E-00-53-21",
+		"ip":          "192.168.100.21",
+		"netId":       "untrusted-net-id",
+		"netName":     "Untrusted",
+		"description": "Porch camera",
 		"status":      true,
 	}
 
@@ -96,20 +96,20 @@ func TestAcc_DhcpReservationResource(t *testing.T) {
 				Config: ts.ProviderConfig + `
 				resource "omada_dhcp_reservation" "test" {
 					site_id     = "test-site-id"
-					mac         = "48-22-54-C3-4C-DE"
-					ip          = "192.168.30.21"
-					net_id      = "outdoor-net-id"
-					description = "VIGI South"
+					mac         = "00-00-5E-00-53-21"
+					ip          = "192.168.100.21"
+					net_id      = "untrusted-net-id"
+					description = "Porch camera"
 				}
 				`,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "reservation_id", "test-reservation-id"),
 					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "site_id", "test-site-id"),
-					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "mac", "48-22-54-C3-4C-DE"),
-					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "ip", "192.168.30.21"),
-					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "net_id", "outdoor-net-id"),
-					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "net_name", "Outdoor-Untrusted"),
-					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "description", "VIGI South"),
+					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "mac", "00-00-5E-00-53-21"),
+					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "ip", "192.168.100.21"),
+					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "net_id", "untrusted-net-id"),
+					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "net_name", "Untrusted"),
+					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "description", "Porch camera"),
 					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "status", "true"),
 				),
 			},
@@ -118,7 +118,7 @@ func TestAcc_DhcpReservationResource(t *testing.T) {
 				ResourceName:                         "omada_dhcp_reservation.test",
 				ImportState:                          true,
 				ImportStateVerify:                    true,
-				ImportStateId:                        "test-site-id/48-22-54-C3-4C-DE",
+				ImportStateId:                        "test-site-id/00-00-5E-00-53-21",
 				ImportStateVerifyIdentifierAttribute: "mac",
 			},
 			// Update the reserved IP + description in place.
@@ -126,15 +126,15 @@ func TestAcc_DhcpReservationResource(t *testing.T) {
 				Config: ts.ProviderConfig + `
 				resource "omada_dhcp_reservation" "test" {
 					site_id     = "test-site-id"
-					mac         = "48-22-54-C3-4C-DE"
-					ip          = "192.168.30.31"
-					net_id      = "outdoor-net-id"
-					description = "VIGI South (moved)"
+					mac         = "00-00-5E-00-53-21"
+					ip          = "192.168.100.31"
+					net_id      = "untrusted-net-id"
+					description = "Porch camera (moved)"
 				}
 				`,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "ip", "192.168.30.31"),
-					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "description", "VIGI South (moved)"),
+					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "ip", "192.168.100.31"),
+					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "description", "Porch camera (moved)"),
 				),
 			},
 		},
@@ -151,8 +151,8 @@ func TestAcc_DhcpReservationResource_CreateWithoutId(t *testing.T) {
 
 	row := map[string]any{
 		"id":      "recovered-reservation-id",
-		"mac":     "E8-6B-EA-ED-97-3C",
-		"ip":      "192.168.20.13",
+		"mac":     "00-00-5E-00-53-31",
+		"ip":      "192.168.110.13",
 		"netId":   "personal-net-id",
 		"netName": "Personal",
 		"status":  true,
@@ -177,14 +177,14 @@ func TestAcc_DhcpReservationResource_CreateWithoutId(t *testing.T) {
 				Config: ts.ProviderConfig + `
 				resource "omada_dhcp_reservation" "test" {
 					site_id = "test-site-id"
-					mac     = "E8-6B-EA-ED-97-3C"
-					ip      = "192.168.20.13"
+					mac     = "00-00-5E-00-53-31"
+					ip      = "192.168.110.13"
 					net_id  = "personal-net-id"
 				}
 				`,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "reservation_id", "recovered-reservation-id"),
-					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "ip", "192.168.20.13"),
+					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "ip", "192.168.110.13"),
 					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "status", "true"),
 				),
 			},
@@ -204,8 +204,8 @@ func TestAcc_DhcpReservationResource_MacSeparatorNormalization(t *testing.T) {
 	// than the dash-uppercase MAC in the configuration.
 	row := map[string]any{
 		"id":      "sep-reservation-id",
-		"mac":     "e8:6b:ea:ed:97:3c",
-		"ip":      "192.168.20.13",
+		"mac":     "00:00:5e:00:53:31",
+		"ip":      "192.168.110.13",
 		"netId":   "personal-net-id",
 		"netName": "Personal",
 		"status":  true,
@@ -228,15 +228,15 @@ func TestAcc_DhcpReservationResource_MacSeparatorNormalization(t *testing.T) {
 				Config: ts.ProviderConfig + `
 				resource "omada_dhcp_reservation" "test" {
 					site_id = "test-site-id"
-					mac     = "E8-6B-EA-ED-97-3C"
-					ip      = "192.168.20.13"
+					mac     = "00-00-5E-00-53-31"
+					ip      = "192.168.110.13"
 					net_id  = "personal-net-id"
 				}
 				`,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "reservation_id", "sep-reservation-id"),
 					// mac is preserved as configured (not overwritten by the read).
-					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "mac", "E8-6B-EA-ED-97-3C"),
+					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "mac", "00-00-5E-00-53-31"),
 				),
 			},
 		},

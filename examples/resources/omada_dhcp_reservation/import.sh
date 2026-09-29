@@ -1,2 +1,2 @@
 # A DHCP reservation is imported as <site_id>/<mac>.
-terraform import omada_dhcp_reservation.vigi_south 638ef75473919c1e1734f763/48-22-54-C3-4C-DE
+terraform import omada_dhcp_reservation.porch_camera 64b000000000000000000001/00-00-5E-00-53-21

@@ -10,7 +10,7 @@ import (
 
 // carryUnmodeled copies the live values of the settings this resource doesn't
 // model into an update body, so an edit to a modeled attribute can't reset
-// them (homelab #515). The Open API's PATCH semantics for omitted fields are
+// them. The Open API's PATCH semantics for omitted fields are
 // undocumented, so nothing is left to chance:
 //
 //   - simple settings the SDK can send (L2 relay, isolation, MLD snooping,
@@ -18,8 +18,8 @@ import (
 //     with their live values;
 //   - settings it can't send faithfully (DHCP and DHCPv6 guard, IPv6, custom
 //     DHCP options; the SDK even misspells the IPv6 key) make the update fail
-//     when they are on, rather than risk resetting them. All are off on the
-//     homelab's networks (read-only probe, 2026-09-29).
+//     when they are on, rather than risk resetting them. They are off on a
+//     typical network, so an ordinary edit is unaffected.
 //
 // It returns false, with an error diagnostic, when the update must not run.
 func carryUnmodeled(body *omada.LanNetworkOpenApiVO, live *lanNetworkReadRow, diags *diag.Diagnostics) bool {

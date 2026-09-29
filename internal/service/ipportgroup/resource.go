@@ -203,7 +203,7 @@ func (r *ipPortGroupResource) Create(ctx context.Context, req resource.CreateReq
 	if !awaitReadGroup(ctx, &resp.Diagnostics, r, &plan) {
 		// The group exists on the controller: keep it in state (tainted) with
 		// the id the POST returned rather than a null id, which an ACL would
-		// reference as a null element (homelab #514).
+		// reference as a null element.
 		resp.Diagnostics.Append(tfstate.SaveCreated(ctx, req.Plan, &resp.State, "group_id", plan.GroupId.ValueString())...)
 		resp.Diagnostics.AddError(
 			"Error creating IP-Port group",
@@ -301,7 +301,7 @@ func (r *ipPortGroupResource) Delete(ctx context.Context, req resource.DeleteReq
 	// as an error so the operator removes the reference first.
 	if env.HasError() && !errGroupNotFound[env.Code()] {
 		// Any other controller error is still success when a confirmed re-list
-		// shows the group absent (homelab #514); a referenced group stays listed.
+		// shows the group absent; a referenced group stays listed.
 		var listDiags diag.Diagnostics
 		if _, found := findGroupConfirmed(ctx, &listDiags, r, &state); !listDiags.HasError() && !found {
 			return
@@ -394,8 +394,8 @@ const goneConfirmations = 3
 
 // awaitReadGroup retries the list read until the group is present, refreshing
 // the model in place. It never clears group_id: Create and Update already know
-// the id, and a null id would reach any ACL that references the group (homelab
-// #514). Only the last attempt's diagnostics are kept.
+// the id, and a null id would reach any ACL that references the group.
+// Only the last attempt's diagnostics are kept.
 func awaitReadGroup(ctx context.Context, diags *diag.Diagnostics, r *ipPortGroupResource, model *ipPortGroupResourceModel) bool {
 	ok, last := retry.Until(ctx, retry.Attempts, retry.Interval, func(d *diag.Diagnostics) bool {
 		if row := findGroupInList(ctx, d, r, model); row != nil {

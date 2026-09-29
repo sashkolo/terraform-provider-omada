@@ -93,7 +93,7 @@ func (r *lanNetworkResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"vlan_id": schema.Int32Attribute{
 				Description: "802.1Q VLAN tag for this network. Must be in the range 1-4094 and unused by any " +
 					"other network or WAN interface. Changed in place: replacing the network would delete it, " +
-					"with everything that references it, before the new one exists (homelab #515).",
+					"with everything that references it, before the new one exists.",
 				Required: true,
 			},
 			"purpose": schema.Int32Attribute{
@@ -127,7 +127,7 @@ func (r *lanNetworkResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Optional: true,
 				Computed: true,
 				// Without this the value is unknown on update, and the SDK sends it as
-				// false, turning snooping off (homelab #515).
+				// false, turning snooping off.
 				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.UseStateForUnknown(),
 				},
@@ -205,7 +205,7 @@ func (r *lanNetworkResource) Create(ctx context.Context, req resource.CreateRequ
 	}
 	// network_id is Computed, so it is Unknown (not Null) at create time; the
 	// name lookup must run for both, or a create result without an id stores a
-	// null network_id (homelab #514).
+	// null network_id.
 	if (plan.NetworkId.IsUnknown() || plan.NetworkId.IsNull()) && !awaitFindLanNetworkByName(ctx, &resp.Diagnostics, r, &plan) {
 		resp.Diagnostics.AddError(
 			"Error creating LAN network",
@@ -217,7 +217,7 @@ func (r *lanNetworkResource) Create(ctx context.Context, req resource.CreateRequ
 	if !awaitReadLanNetwork(ctx, &resp.Diagnostics, r, &plan) {
 		// The network exists on the controller: keep it in state (tainted)
 		// rather than orphaning it, so a re-apply replaces it instead of failing
-		// on a duplicate name or VLAN (homelab #514).
+		// on a duplicate name or VLAN.
 		resp.Diagnostics.Append(tfstate.SaveCreated(ctx, req.Plan, &resp.State, "network_id", plan.NetworkId.ValueString())...)
 		resp.Diagnostics.AddError(
 			"Error creating LAN network",
@@ -249,7 +249,7 @@ func (r *lanNetworkResource) Read(ctx context.Context, req resource.ReadRequest,
 	if !found {
 		// Deleted outside Terraform. Setting nothing would keep the prior state,
 		// which the framework pre-fills, so the network would silently stay
-		// "managed" (homelab #514).
+		// "managed".
 		resp.State.RemoveResource(ctx)
 		return
 	}
@@ -279,7 +279,7 @@ func (r *lanNetworkResource) Update(ctx context.Context, req resource.UpdateRequ
 
 	// Read-modify-write: the settings this resource doesn't model are sent back
 	// with their live values, or the update is refused when one can't be
-	// carried safely (homelab #515).
+	// carried safely.
 	live := findLanNetworkInList(ctx, &resp.Diagnostics, r, &plan)
 	if resp.Diagnostics.HasError() {
 		return

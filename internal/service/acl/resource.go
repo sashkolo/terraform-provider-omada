@@ -262,7 +262,7 @@ func (r *aclResource) Create(ctx context.Context, req resource.CreateRequest, re
 	if !awaitReadAcl(ctx, &resp.Diagnostics, r, &plan) {
 		// The rule exists on the controller: keep it in state (tainted) rather
 		// than orphaning it, so a re-apply replaces it instead of failing on a
-		// duplicate description (homelab #514).
+		// duplicate description.
 		resp.Diagnostics.Append(tfstate.SaveCreated(ctx, req.Plan, &resp.State, "acl_id", plan.AclId.ValueString())...)
 		resp.Diagnostics.AddError(
 			"Error creating ACL",
@@ -294,7 +294,7 @@ func (r *aclResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 	if !found {
 		// Deleted outside Terraform. Setting nothing would keep the prior state,
 		// which the framework pre-fills, so the rule would silently stay
-		// "managed" (homelab #514).
+		// "managed".
 		resp.State.RemoveResource(ctx)
 		return
 	}

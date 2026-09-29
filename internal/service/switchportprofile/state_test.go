@@ -13,7 +13,7 @@ import (
 )
 
 // fakeProfileController models the parts of the controller that state accuracy
-// depends on (homelab #514): a paged list that is the only way to read a
+// depends on: a paged list that is the only way to read a
 // profile, eventually consistent after a write, and a DELETE that fails when
 // the profile is already gone.
 type fakeProfileController struct {
@@ -90,8 +90,8 @@ func (f *fakeProfileController) set(fn func(f *fakeProfileController)) {
 const stateTestProfile = `
 resource "omada_switch_port_profile" "test" {
 	site_id            = "test-site-id"
-	name               = "Outdoor-Untrusted"
-	native_network_id  = "net-outdoor"
+	name               = "Untrusted"
+	native_network_id  = "net-untrusted"
 	tagged_network_ids = []
 	port_isolation_enable  = false
 	lldp_med_enable        = true
@@ -154,7 +154,7 @@ func TestAcc_SwitchPortProfileCreateReadBackLagKeepsId(t *testing.T) {
 
 // Creating a profile with the protective toggles unset must be refused: the
 // SDK sends them as plain booleans, so on 0.14.0 the profile was created with
-// STP, loopback detection and isolation off (homelab #515).
+// STP, loopback detection and isolation off.
 func TestAcc_SwitchPortProfileCreateRequiresToggles(t *testing.T) {
 	_, ts := newFakeProfileController(t)
 
@@ -165,8 +165,8 @@ func TestAcc_SwitchPortProfileCreateRequiresToggles(t *testing.T) {
 				Config: ts.ProviderConfig + `
 resource "omada_switch_port_profile" "test" {
 	site_id            = "test-site-id"
-	name               = "Outdoor-Untrusted"
-	native_network_id  = "net-outdoor"
+	name               = "Untrusted"
+	native_network_id  = "net-untrusted"
 	tagged_network_ids = []
 }
 `,

@@ -7,7 +7,7 @@ import (
 
 const (
 	// purposeInterface (1) is a gateway-terminated LAN network with an IP
-	// interface (gatewaySubnet). This is the homelab shape and the resource
+	// interface (gatewaySubnet). This is the common shape and the resource
 	// default. purposeVlan (0) is a VLAN-only network with no gateway interface.
 	purposeInterface int32 = 1
 	// vlanTypeSingle (0) is one VLAN tag per network, as opposed to a
@@ -41,7 +41,7 @@ func expandDhcpSettings(s *dhcpSettingsModel) *omada.DhcpSettings {
 // expandInterfaceIds converts the Terraform list of interface IDs (gateway LAN
 // port IDs) into the SDK slice. An unset list returns nil, which the SDK omits,
 // so the controller keeps the network's ports; before, it sent [], which asks
-// to unbind every port (homelab #515). An explicit [] is still sent.
+// to unbind every port. An explicit [] is still sent.
 func expandInterfaceIds(ids []types.String) []string {
 	if ids == nil {
 		return nil

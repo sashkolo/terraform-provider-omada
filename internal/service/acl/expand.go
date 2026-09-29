@@ -104,7 +104,7 @@ func expandGatewayACL(plan aclResourceModel) omada.GatewayACLConfig {
 // checkReferencedIDs rejects a null or unknown id inside source_ids or
 // destination_ids at apply time. A null element means a referenced object has
 // no id (for example a group whose create lost it); skipping it would send an
-// empty or narrower id list and change what the rule matches (homelab #514).
+// empty or narrower id list and change what the rule matches.
 func checkReferencedIDs(plan aclResourceModel, diags *diag.Diagnostics, action string) {
 	for i, v := range plan.SourceIds {
 		if v.IsNull() || v.IsUnknown() {

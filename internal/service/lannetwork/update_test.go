@@ -20,14 +20,14 @@ resource "omada_lan_network" "test" {
 	site_id        = "test-site-id"
 	name           = %q
 	vlan_id        = %d
-	gateway_subnet = "192.168.40.1/24"
+	gateway_subnet = "192.168.120.1/24"
 	%s
 
 	dhcp_settings = {
 		enable       = true
 		dhcpns       = "auto"
-		ipaddr_start = "192.168.40.20"
-		ipaddr_end   = "192.168.40.254"
+		ipaddr_start = "192.168.120.20"
+		ipaddr_end   = "192.168.120.254"
 		leasetime    = 1440
 	}
 }
@@ -35,7 +35,7 @@ resource "omada_lan_network" "test" {
 }
 
 // An edit must not reset settings the config leaves unset or the resource
-// doesn't model (homelab #515). On 0.14.0 igmp_snoop_enable was unknown on
+// doesn't model. On 0.14.0 igmp_snoop_enable was unknown on
 // update and sent as false, and the body carried only modeled fields.
 func TestAcc_LanNetworkUpdateKeepsUnsetLiveSettings(t *testing.T) {
 	f, ts := newFakeLanController(t)
@@ -43,7 +43,7 @@ func TestAcc_LanNetworkUpdateKeepsUnsetLiveSettings(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
-			{Config: ts.ProviderConfig + updateTestLanNetwork("Outdoor", 40, true)},
+			{Config: ts.ProviderConfig + updateTestLanNetwork("Untrusted", 40, true)},
 			{
 				// Turned on in the controller UI.
 				PreConfig: f.set(func(f *fakeLanController) {
@@ -56,7 +56,7 @@ func TestAcc_LanNetworkUpdateKeepsUnsetLiveSettings(t *testing.T) {
 						}
 					}
 				}),
-				Config: ts.ProviderConfig + updateTestLanNetwork("Outdoor renamed", 40, true),
+				Config: ts.ProviderConfig + updateTestLanNetwork("Untrusted renamed", 40, true),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("omada_lan_network.test", "igmp_snoop_enable", "true"),
 					func(*terraform.State) error {
@@ -94,14 +94,14 @@ func TestAcc_LanNetworkUpdateRefusedWhenUnmodeledSettingOn(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
-			{Config: ts.ProviderConfig + updateTestLanNetwork("Outdoor", 40, true)},
+			{Config: ts.ProviderConfig + updateTestLanNetwork("Untrusted", 40, true)},
 			{
 				PreConfig: f.set(func(f *fakeLanController) {
 					for _, row := range f.rows {
 						row["dhcpGuard"] = map[string]any{"enable": true}
 					}
 				}),
-				Config:      ts.ProviderConfig + updateTestLanNetwork("Outdoor renamed", 40, true),
+				Config:      ts.ProviderConfig + updateTestLanNetwork("Untrusted renamed", 40, true),
 				ExpectError: regexp.MustCompile(`DHCP guard turned on`),
 			},
 		},
@@ -122,9 +122,9 @@ func TestAcc_LanNetworkVlanChangeInPlace(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
-			{Config: ts.ProviderConfig + updateTestLanNetwork("Outdoor", 40, true)},
+			{Config: ts.ProviderConfig + updateTestLanNetwork("Untrusted", 40, true)},
 			{
-				Config: ts.ProviderConfig + updateTestLanNetwork("Outdoor", 41, true),
+				Config: ts.ProviderConfig + updateTestLanNetwork("Untrusted", 41, true),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("omada_lan_network.test", "network_id", "net-1"),
 					resource.TestCheckResourceAttr("omada_lan_network.test", "vlan_id", "41"),
@@ -148,9 +148,9 @@ func TestAcc_LanNetworkUnsetInterfaceIdsRefused(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
-			{Config: ts.ProviderConfig + updateTestLanNetwork("Outdoor", 40, true)},
+			{Config: ts.ProviderConfig + updateTestLanNetwork("Untrusted", 40, true)},
 			{
-				Config:      ts.ProviderConfig + updateTestLanNetwork("Outdoor", 40, false),
+				Config:      ts.ProviderConfig + updateTestLanNetwork("Untrusted", 40, false),
 				ExpectError: regexp.MustCompile(`interface_ids is unset`),
 			},
 		},

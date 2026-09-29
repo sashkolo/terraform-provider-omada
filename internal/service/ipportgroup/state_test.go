@@ -13,7 +13,7 @@ import (
 )
 
 // fakeGroupController models the parts of the controller that state accuracy
-// depends on (homelab #514): a per-type list that is the only way to read a
+// depends on: a per-type list that is the only way to read a
 // group and that is eventually consistent after a write.
 type fakeGroupController struct {
 	mu   sync.Mutex
@@ -85,7 +85,7 @@ resource "omada_ip_port_group" "test" {
 	site_id = "test-site-id"
 	name    = "camera-service-ports"
 	ip_list = [
-		{ ip = "192.168.30.0", mask = 24 },
+		{ ip = "192.168.100.0", mask = 24 },
 	]
 	port_list = ["554"]
 }

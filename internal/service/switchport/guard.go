@@ -27,7 +27,7 @@ type profileList struct {
 }
 
 // guardPortWrite refuses a port write that could cut the network off before
-// anything is sent (homelab #517). The Open API reports no uplink or
+// anything is sent. The Open API reports no uplink or
 // management port, so the guard judges by what the port carries now:
 //
 //   - the port must exist on the switch (a typo in `port` used to be applied to

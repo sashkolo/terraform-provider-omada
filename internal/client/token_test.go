@@ -66,7 +66,7 @@ func call(t *testing.T, c *http.Client, url, body string) map[string]any {
 
 // A token the controller rejects mid-run is renewed and the request retried
 // with its body intact. On 0.14.0 the token was fetched once at configure time,
-// so a run longer than its lifetime failed half way (homelab #516).
+// so a run longer than its lifetime failed half way.
 func TestAuthTransportRenewsARejectedToken(t *testing.T) {
 	f := &fakeAuthController{expiresIn: 7200}
 	srv := f.server(t)
