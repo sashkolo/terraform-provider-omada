@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"terraform-provider-omada/internal/client"
 	"terraform-provider-omada/internal/service/acl"
+	"terraform-provider-omada/internal/service/aclconfigmode"
 	"terraform-provider-omada/internal/service/apwlangroup"
 	"terraform-provider-omada/internal/service/attackdefensesetting"
 	"terraform-provider-omada/internal/service/dhcpreservation"
@@ -15,6 +16,7 @@ import (
 	"terraform-provider-omada/internal/service/ipportgroup"
 	"terraform-provider-omada/internal/service/lannetwork"
 	"terraform-provider-omada/internal/service/portforwarding"
+	"terraform-provider-omada/internal/service/remotelogging"
 	"terraform-provider-omada/internal/service/site"
 	"terraform-provider-omada/internal/service/ssid"
 	"terraform-provider-omada/internal/service/switchport"
@@ -337,6 +339,7 @@ func (p *omadaProvider) Configure(ctx context.Context, req provider.ConfigureReq
 func (p *omadaProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		site.NewDataSourceList,
+		aclconfigmode.NewDataSource,
 	}
 }
 
@@ -358,5 +361,6 @@ func (p *omadaProvider) Resources(_ context.Context) []func() resource.Resource 
 		dhcpreservation.NewResource,
 		apwlangroup.NewResource,
 		portforwarding.NewResource,
+		remotelogging.NewResource,
 	}
 }
