@@ -1,6 +1,8 @@
 package lannetwork
 
 import (
+	"strings"
+
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -52,6 +54,22 @@ func flattenInterfaceIds(ids []string, prior []types.String) []types.String {
 	return out
 }
 
+// defaultNameSuffix is what the controller appends, for display, to the stored
+// name of the site's default network in the LAN-network list.
+const defaultNameSuffix = "(Default)"
+
+// flattenName returns the stored network name. The list reports the default
+// network as "<name>(Default)", but an update stores the name it is sent
+// verbatim, so reading the suffix into state renamed the network on its next
+// update ("Management" became "Management(Default)") and then failed the apply
+// with an inconsistent result. Found by a live DHCP-pool update.
+func flattenName(r *lanNetworkReadRow) string {
+	if r.Primary {
+		return strings.TrimSuffix(r.Name, defaultNameSuffix)
+	}
+	return r.Name
+}
+
 // flattenLanNetworkRead overwrites the resource model from a lenient read row.
 // network_id and site_id are preserved from the prior state (Read is keyed by
 // them); the remaining fields are refreshed from the controller.
@@ -61,7 +79,7 @@ func flattenLanNetworkRead(m *lanNetworkResourceModel, r *lanNetworkReadRow) {
 	}
 
 	m.NetworkId = types.StringPointerValue(r.Id)
-	m.Name = types.StringValue(r.Name)
+	m.Name = types.StringValue(flattenName(r))
 	m.VlanId = types.Int32PointerValue(r.Vlan)
 	m.Purpose = types.Int32Value(r.Purpose)
 	m.GatewaySubnet = types.StringPointerValue(r.GatewaySubnet)

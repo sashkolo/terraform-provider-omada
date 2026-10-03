@@ -464,7 +464,7 @@ func awaitFindLanNetworkByName(ctx context.Context, diags *diag.Diagnostics, r *
 			return false
 		}
 		for i := range data {
-			if data[i].Name == model.Name.ValueString() && data[i].Id != nil && *data[i].Id != "" {
+			if flattenName(&data[i]) == model.Name.ValueString() && data[i].Id != nil && *data[i].Id != "" {
 				model.NetworkId = types.StringValue(*data[i].Id)
 				return true
 			}

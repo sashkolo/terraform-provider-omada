@@ -44,6 +44,9 @@ type lanNetworkReadRow struct {
 	IgmpSnoopEnable bool        `json:"igmpSnoopEnable"`
 	InterfaceIds    []string    `json:"interfaceIds"`
 	DhcpSettingsVO  *dhcpReadVO `json:"dhcpSettingsVO"`
+	// Primary marks the site's default network, whose listed name carries a
+	// display suffix (see flattenName).
+	Primary bool `json:"primary"`
 
 	// Unmodeled network settings, carried or guarded on update (carry.go).
 	AllLan               *bool           `json:"allLan"`
