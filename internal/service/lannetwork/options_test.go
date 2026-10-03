@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-testing/config"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
@@ -197,6 +198,35 @@ func TestAcc_LanNetworkDhcpOptionsValidated(t *testing.T) {
 			{ code = 300, type = 0, value = "x" },
 		]`),
 				ExpectError: regexp.MustCompile(`code must be within 1-254`),
+			},
+		},
+	})
+}
+
+// Options built from an expression that is unknown at validation time (here a
+// conditional on an input variable) must validate; on v0.19.0 ValidateConfig
+// read them into a plain slice and failed with a value conversion error.
+func TestAcc_LanNetworkDhcpOptionsFromExpression(t *testing.T) {
+	_, ts := newFakeLanController(t)
+
+	cfg := `
+variable "two_entries" {
+	type = bool
+}
+` + optionsTestLanNetwork("IoT", "", `options = var.two_entries ? [
+			{ code = 42, type = 1, value = "192.0.2.10" },
+			{ code = 42, type = 1, value = "192.0.2.11" },
+		] : [
+			{ code = 42, type = 1, value = "192.0.2.10,192.0.2.11" },
+		]`)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config:          ts.ProviderConfig + cfg,
+				ConfigVariables: config.Variables{"two_entries": config.BoolVariable(true)},
+				Check:           resource.TestCheckResourceAttr("omada_lan_network.test", "dhcp_settings.options.#", "2"),
 			},
 		},
 	})

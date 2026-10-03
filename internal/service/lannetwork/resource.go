@@ -19,6 +19,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 )
 
 // Ensure the implementation satisfies the expected interfaces.
@@ -214,15 +215,28 @@ func (r *lanNetworkResource) Schema(_ context.Context, _ resource.SchemaRequest,
 	}
 }
 
-// ValidateConfig checks the custom DHCP options' code and type ranges.
+// ValidateConfig checks the custom DHCP options' code and type ranges. It
+// reads only dhcp_settings.options, as a list that may be unknown (options
+// built from a variable or another resource are unknown at validation time),
+// and checks the elements that are already known.
 func (r *lanNetworkResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
-	var cfg lanNetworkResourceModel
-	resp.Diagnostics.Append(req.Config.Get(ctx, &cfg)...)
-	if resp.Diagnostics.HasError() || cfg.DhcpSettings == nil {
+	optsPath := path.Root("dhcp_settings").AtName("options")
+	var opts types.List
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, optsPath, &opts)...)
+	if resp.Diagnostics.HasError() || opts.IsNull() || opts.IsUnknown() {
 		return
 	}
-	for i, o := range cfg.DhcpSettings.Options {
-		p := path.Root("dhcp_settings").AtName("options").AtListIndex(i)
+	for i, el := range opts.Elements() {
+		obj, ok := el.(types.Object)
+		if !ok || obj.IsNull() || obj.IsUnknown() {
+			continue
+		}
+		var o dhcpOptionModel
+		resp.Diagnostics.Append(obj.As(ctx, &o, basetypes.ObjectAsOptions{})...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		p := optsPath.AtListIndex(i)
 		if !o.Code.IsNull() && !o.Code.IsUnknown() {
 			if c := o.Code.ValueInt32(); c < 1 || c > 254 {
 				resp.Diagnostics.AddAttributeError(p.AtName("code"), "Invalid DHCP option code",
