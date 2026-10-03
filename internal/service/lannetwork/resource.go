@@ -23,9 +23,10 @@ import (
 
 // Ensure the implementation satisfies the expected interfaces.
 var (
-	_ resource.Resource                = &lanNetworkResource{}
-	_ resource.ResourceWithConfigure   = &lanNetworkResource{}
-	_ resource.ResourceWithImportState = &lanNetworkResource{}
+	_ resource.Resource                   = &lanNetworkResource{}
+	_ resource.ResourceWithConfigure      = &lanNetworkResource{}
+	_ resource.ResourceWithImportState    = &lanNetworkResource{}
+	_ resource.ResourceWithValidateConfig = &lanNetworkResource{}
 )
 
 // NewResource is a helper function to simplify the provider implementation.
@@ -132,6 +133,23 @@ func (r *lanNetworkResource) Schema(_ context.Context, _ resource.SchemaRequest,
 					boolplanmodifier.UseStateForUnknown(),
 				},
 			},
+			"isolation": schema.BoolAttribute{
+				Description: "Network isolation: when on, devices on this network can't reach other networks. " +
+					"When unset, an update keeps the live value; a network that never set it reads as `false`.",
+				Optional: true,
+				Computed: true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"ipv6_enabled": schema.BoolAttribute{
+				Description: "Whether IPv6 is on for this network (read-only). Use it in a postcondition to keep " +
+					"IPv6 off; an update is refused while it is on, since this resource doesn't model IPv6.",
+				Computed: true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
+			},
 			"dhcp_settings": schema.SingleNestedAttribute{
 				Description: "Gateway-served DHCP configuration. Omit for a VLAN with no DHCP served by the gateway.",
 				Optional:    true,
@@ -168,9 +186,55 @@ func (r *lanNetworkResource) Schema(_ context.Context, _ resource.SchemaRequest,
 						Description: "Secondary DNS server handed to clients.",
 						Optional:    true,
 					},
+					"options": schema.ListNestedAttribute{
+						Description: "Custom DHCP options handed to clients, for example option 42 (NTP servers). " +
+							"Authoritative when set. When unset, a network with live custom options can't be " +
+							"updated (the update would drop them): declare them here or remove them in the UI.",
+						Optional: true,
+						NestedObject: schema.NestedAttributeObject{
+							Attributes: map[string]schema.Attribute{
+								"code": schema.Int32Attribute{
+									Description: "DHCP option code, 1-254.",
+									Required:    true,
+								},
+								"type": schema.Int32Attribute{
+									Description: "Value encoding: `0` string, `1` IP address, `2` hex array.",
+									Required:    true,
+								},
+								"value": schema.StringAttribute{
+									Description: "Option value, in the encoding `type` names.",
+									Required:    true,
+								},
+							},
+						},
+					},
 				},
 			},
 		},
+	}
+}
+
+// ValidateConfig checks the custom DHCP options' code and type ranges.
+func (r *lanNetworkResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var cfg lanNetworkResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &cfg)...)
+	if resp.Diagnostics.HasError() || cfg.DhcpSettings == nil {
+		return
+	}
+	for i, o := range cfg.DhcpSettings.Options {
+		p := path.Root("dhcp_settings").AtName("options").AtListIndex(i)
+		if !o.Code.IsNull() && !o.Code.IsUnknown() {
+			if c := o.Code.ValueInt32(); c < 1 || c > 254 {
+				resp.Diagnostics.AddAttributeError(p.AtName("code"), "Invalid DHCP option code",
+					fmt.Sprintf("code must be within 1-254, got %d.", c))
+			}
+		}
+		if !o.Type.IsNull() && !o.Type.IsUnknown() {
+			if t := o.Type.ValueInt32(); t < 0 || t > 2 {
+				resp.Diagnostics.AddAttributeError(p.AtName("type"), "Invalid DHCP option type",
+					fmt.Sprintf("type must be 0 (string), 1 (IP address) or 2 (hex array), got %d.", t))
+			}
+		}
 	}
 }
 

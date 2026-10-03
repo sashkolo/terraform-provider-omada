@@ -1,7 +1,5 @@
 package lannetwork
 
-import "encoding/json"
-
 // Lenient, provider-local decode types for this resource's result payloads.
 // The {errorCode, msg, result} envelope itself is decoded by
 // internal/envelope, which also explains why these types exist: the SDK's
@@ -14,12 +12,12 @@ type createResult struct {
 
 // dhcpReadVO mirrors the controller's dhcpSettingsVO shape on read.
 type dhcpReadVO struct {
-	// Unmodeled DHCP settings, carried or guarded on update (carry.go).
-	DhcpNextServer *string           `json:"dhcpNextServer"`
-	Option60       *string           `json:"option60"`
-	Option66       *string           `json:"option66"`
-	Option138      *string           `json:"option138"`
-	Options        []json.RawMessage `json:"options"`
+	// DHCP settings carried on update (carry.go); Options is modeled.
+	DhcpNextServer *string          `json:"dhcpNextServer"`
+	Option60       *string          `json:"option60"`
+	Option66       *string          `json:"option66"`
+	Option138      *string          `json:"option138"`
+	Options        []dhcpOptionRead `json:"options"`
 
 	Enable      *bool   `json:"enable"`
 	Dhcpns      *string `json:"dhcpns"`
@@ -29,6 +27,13 @@ type dhcpReadVO struct {
 	Leasetime   *int32  `json:"leasetime"`
 	PriDns      *string `json:"priDns"`
 	SndDns      *string `json:"sndDns"`
+}
+
+// dhcpOptionRead is one custom DHCP option on read.
+type dhcpOptionRead struct {
+	Code  *int32  `json:"code"`
+	Type  *int32  `json:"type"`
+	Value *string `json:"value"`
 }
 
 // lanNetworkReadRow is a lenient, provider-local view of one LAN-network list
@@ -48,7 +53,8 @@ type lanNetworkReadRow struct {
 	// display suffix (see flattenName).
 	Primary bool `json:"primary"`
 
-	// Unmodeled network settings, carried or guarded on update (carry.go).
+	// Network settings carried or guarded on update (carry.go). Isolation is
+	// modeled; LanNetworkIpv6Config is exposed read-only as ipv6_enabled.
 	AllLan               *bool           `json:"allLan"`
 	Application          *int32          `json:"application"`
 	DhcpL2RelayEnable    *bool           `json:"dhcpL2RelayEnable"`
