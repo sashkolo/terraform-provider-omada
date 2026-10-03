@@ -24,6 +24,18 @@ type dhcpSettingsModel struct {
 	Leasetime   types.Int32  `tfsdk:"leasetime"`
 	PriDns      types.String `tfsdk:"pri_dns"`
 	SndDns      types.String `tfsdk:"snd_dns"`
+	// Options are the custom DHCP options the gateway hands out (for example
+	// option 42, NTP servers). Authoritative when set; see carryUnmodeled for
+	// what happens to live options when it is unset.
+	Options []dhcpOptionModel `tfsdk:"options"`
+}
+
+// dhcpOptionModel is one custom DHCP option. Type follows the controller's
+// encoding: 0 string, 1 IP address, 2 hex array.
+type dhcpOptionModel struct {
+	Code  types.Int32  `tfsdk:"code"`
+	Type  types.Int32  `tfsdk:"type"`
+	Value types.String `tfsdk:"value"`
 }
 
 // lanNetworkResourceModel maps the omada_lan_network resource schema. It models
@@ -45,5 +57,7 @@ type lanNetworkResourceModel struct {
 	InterfaceIds    []types.String     `tfsdk:"interface_ids"`
 	Domain          types.String       `tfsdk:"domain"`
 	IgmpSnoopEnable types.Bool         `tfsdk:"igmp_snoop_enable"`
+	Isolation       types.Bool         `tfsdk:"isolation"`
+	Ipv6Enabled     types.Bool         `tfsdk:"ipv6_enabled"`
 	DhcpSettings    *dhcpSettingsModel `tfsdk:"dhcp_settings"`
 }

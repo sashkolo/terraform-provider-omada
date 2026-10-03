@@ -16,7 +16,34 @@ func flattenDhcpForModel(s *dhcpReadVO, prior *dhcpSettingsModel) *dhcpSettingsM
 	if prior == nil && (s == nil || s.Enable == nil || !*s.Enable) {
 		return nil
 	}
-	return flattenDhcpRead(s)
+	m := flattenDhcpRead(s)
+	if m != nil {
+		var priorOpts []dhcpOptionModel
+		if prior != nil {
+			priorOpts = prior.Options
+		}
+		m.Options = flattenDhcpOptions(s.Options, priorOpts)
+	}
+	return m
+}
+
+// flattenDhcpOptions converts the live custom DHCP options. An empty live list
+// stays null while the prior value was null (options unset), so a network
+// with no options doesn't read back as []; options added in the UI show up as
+// drift.
+func flattenDhcpOptions(opts []dhcpOptionRead, prior []dhcpOptionModel) []dhcpOptionModel {
+	if len(opts) == 0 && prior == nil {
+		return nil
+	}
+	out := make([]dhcpOptionModel, 0, len(opts))
+	for _, o := range opts {
+		out = append(out, dhcpOptionModel{
+			Code:  types.Int32PointerValue(o.Code),
+			Type:  types.Int32PointerValue(o.Type),
+			Value: types.StringPointerValue(o.Value),
+		})
+	}
+	return out
 }
 
 // flattenDhcpRead converts the lenient local DHCP read view into the Terraform
@@ -85,6 +112,11 @@ func flattenLanNetworkRead(m *lanNetworkResourceModel, r *lanNetworkReadRow) {
 	m.GatewaySubnet = types.StringPointerValue(r.GatewaySubnet)
 	m.Domain = types.StringPointerValue(r.Domain)
 	m.IgmpSnoopEnable = types.BoolValue(r.IgmpSnoopEnable)
+	// The controller omits isolation on a network that never set it; that
+	// is off.
+	m.Isolation = types.BoolValue(r.Isolation != nil && *r.Isolation)
+	m.Ipv6Enabled = types.BoolValue(r.LanNetworkIpv6Config != nil &&
+		r.LanNetworkIpv6Config.Enable != nil && *r.LanNetworkIpv6Config.Enable != 0)
 	m.InterfaceIds = flattenInterfaceIds(r.InterfaceIds, m.InterfaceIds)
 	m.DhcpSettings = flattenDhcpForModel(r.DhcpSettingsVO, m.DhcpSettings)
 }

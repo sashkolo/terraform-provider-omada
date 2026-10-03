@@ -20,6 +20,19 @@ resource "omada_lan_network" "example" {
     leasetime    = 1440
     pri_dns      = "192.168.100.1"
     snd_dns      = "8.8.8.8"
+
+    # Option 42 hands out NTP servers. type 1 = IP address.
+    options = [
+      { code = 42, type = 1, value = "192.168.100.1" },
+    ]
+  }
+
+  # Keep IPv6 off: ipv6_enabled is read-only.
+  lifecycle {
+    postcondition {
+      condition     = !self.ipv6_enabled
+      error_message = "IPv6 was turned on for this network in the controller."
+    }
   }
 }
 

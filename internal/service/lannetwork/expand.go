@@ -35,7 +35,26 @@ func expandDhcpSettings(s *dhcpSettingsModel) *omada.DhcpSettings {
 		Leasetime:   s.Leasetime.ValueInt32Pointer(),
 		PriDns:      s.PriDns.ValueStringPointer(),
 		SndDns:      s.SndDns.ValueStringPointer(),
+		Options:     expandDhcpOptions(s.Options),
 	}
+}
+
+// expandDhcpOptions converts the custom DHCP options. An unset or empty list
+// returns nil, which the SDK omits; carryUnmodeled refuses an update that would
+// drop live options that way.
+func expandDhcpOptions(opts []dhcpOptionModel) []omada.CustomDHCPOptions {
+	if len(opts) == 0 {
+		return nil
+	}
+	out := make([]omada.CustomDHCPOptions, 0, len(opts))
+	for _, o := range opts {
+		out = append(out, omada.CustomDHCPOptions{
+			Code:  o.Code.ValueInt32Pointer(),
+			Type:  o.Type.ValueInt32Pointer(),
+			Value: o.Value.ValueStringPointer(),
+		})
+	}
+	return out
 }
 
 // expandInterfaceIds converts the Terraform list of interface IDs (gateway LAN
@@ -67,8 +86,16 @@ func expandLanNetwork(plan lanNetworkResourceModel) omada.LanNetworkOpenApiVO {
 		purpose = plan.Purpose.ValueInt32()
 	}
 
+	// isolation is sent only when known; otherwise carryUnmodeled carries the
+	// live value on update, and create leaves the controller default.
+	var isolation *bool
+	if !plan.Isolation.IsNull() && !plan.Isolation.IsUnknown() {
+		isolation = plan.Isolation.ValueBoolPointer()
+	}
+
 	return omada.LanNetworkOpenApiVO{
 		Name:            plan.Name.ValueString(),
+		Isolation:       isolation,
 		Purpose:         purpose,
 		Vlan:            &vlan,
 		VlanType:        &vlanType,

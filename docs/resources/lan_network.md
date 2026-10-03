@@ -35,6 +35,19 @@ resource "omada_lan_network" "example" {
     leasetime    = 1440
     pri_dns      = "192.168.100.1"
     snd_dns      = "8.8.8.8"
+
+    # Option 42 hands out NTP servers. type 1 = IP address.
+    options = [
+      { code = 42, type = 1, value = "192.168.100.1" },
+    ]
+  }
+
+  # Keep IPv6 off: ipv6_enabled is read-only.
+  lifecycle {
+    postcondition {
+      condition     = !self.ipv6_enabled
+      error_message = "IPv6 was turned on for this network in the controller."
+    }
   }
 }
 
@@ -59,10 +72,12 @@ output "example_network_id" {
 - `domain` (String) Domain name advertised for this network.
 - `igmp_snoop_enable` (Boolean) Enable IGMP snooping on this network. Defaults to `false` on create; when unset, an update keeps the live value.
 - `interface_ids` (List of String) Gateway LAN port IDs the network binds to (from the controller's WAN/LAN status endpoint). Required for purpose `interface`; the controller rejects creation with no ports.
+- `isolation` (Boolean) Network isolation: when on, devices on this network can't reach other networks. When unset, an update keeps the live value; a network that never set it reads as `false`.
 - `purpose` (Number) LAN network purpose. `1` = interface (the default; a gateway-terminated network with a gateway_subnet), `0` = VLAN only. Changing this forces replacement.
 
 ### Read-Only
 
+- `ipv6_enabled` (Boolean) Whether IPv6 is on for this network (read-only). Use it in a postcondition to keep IPv6 off; an update is refused while it is on, since this resource doesn't model IPv6.
 - `network_id` (String) LAN network ID assigned by the controller. Use it (with site_id) as the import target.
 
 <a id="nestedatt--dhcp_settings"></a>
@@ -76,8 +91,18 @@ Optional:
 - `ipaddr_end` (String) Last IP in the DHCP range, inclusive.
 - `ipaddr_start` (String) First IP in the DHCP range, inclusive.
 - `leasetime` (Number) DHCP lease time in minutes. Must be in the range 2-2880.
+- `options` (Attributes List) Custom DHCP options handed to clients, for example option 42 (NTP servers). Authoritative when set. When unset, a network with live custom options can't be updated (the update would drop them): declare them here or remove them in the UI. (see [below for nested schema](#nestedatt--dhcp_settings--options))
 - `pri_dns` (String) Primary DNS server handed to clients.
 - `snd_dns` (String) Secondary DNS server handed to clients.
+
+<a id="nestedatt--dhcp_settings--options"></a>
+### Nested Schema for `dhcp_settings.options`
+
+Required:
+
+- `code` (Number) DHCP option code, 1-254.
+- `type` (Number) Value encoding: `0` string, `1` IP address, `2` hex array.
+- `value` (String) Option value, in the encoding `type` names.
 
 ## Import
 

@@ -13,20 +13,23 @@ import (
 // them. The Open API's PATCH semantics for omitted fields are
 // undocumented, so nothing is left to chance:
 //
-//   - simple settings the SDK can send (L2 relay, isolation, MLD snooping,
-//     all-LAN, application, DHCP next-server and options 60/66/138) are sent
-//     with their live values;
-//   - settings it can't send faithfully (DHCP and DHCPv6 guard, IPv6, custom
-//     DHCP options; the SDK even misspells the IPv6 key) make the update fail
-//     when they are on, rather than risk resetting them. They are off on a
-//     typical network, so an ordinary edit is unaffected.
+//   - simple settings the SDK can send (L2 relay, MLD snooping, all-LAN,
+//     application, DHCP next-server and options 60/66/138, and isolation when
+//     the plan doesn't set it) are sent with their live values;
+//   - settings it can't send faithfully (DHCP and DHCPv6 guard, IPv6; the SDK
+//     even misspells the IPv6 key) make the update fail when they are on,
+//     rather than risk resetting them, and so do live custom DHCP options that
+//     dhcp_settings.options doesn't declare. They are off on a typical
+//     network, so an ordinary edit is unaffected.
 //
 // It returns false, with an error diagnostic, when the update must not run.
 func carryUnmodeled(body *omada.LanNetworkOpenApiVO, live *lanNetworkReadRow, diags *diag.Diagnostics) bool {
 	body.AllLan = live.AllLan
 	body.Application = live.Application
 	body.DhcpL2RelayEnable = live.DhcpL2RelayEnable
-	body.Isolation = live.Isolation
+	if body.Isolation == nil {
+		body.Isolation = live.Isolation
+	}
 	body.MldSnoopEnable = live.MldSnoopEnable
 
 	if body.DhcpSettingsVO != nil && live.DhcpSettingsVO != nil {
@@ -46,8 +49,16 @@ func carryUnmodeled(body *omada.LanNetworkOpenApiVO, live *lanNetworkReadRow, di
 	if live.LanNetworkIpv6Config != nil && live.LanNetworkIpv6Config.Enable != nil && *live.LanNetworkIpv6Config.Enable != 0 {
 		on = append(on, "IPv6")
 	}
-	if live.DhcpSettingsVO != nil && len(live.DhcpSettingsVO.Options) > 0 {
-		on = append(on, "custom DHCP options")
+	// Custom DHCP options are modeled (dhcp_settings.options) and sent when
+	// declared. Live options with none declared would be dropped, since the
+	// SDK omits an empty list, so that update is refused instead.
+	if live.DhcpSettingsVO != nil && len(live.DhcpSettingsVO.Options) > 0 &&
+		(body.DhcpSettingsVO == nil || len(body.DhcpSettingsVO.Options) == 0) {
+		diags.AddError("Error updating LAN network", fmt.Sprintf(
+			"LAN network %q has %d custom DHCP option(s) in the controller that dhcp_settings.options doesn't "+
+				"declare. An update would drop them, so it was not sent. Declare them in dhcp_settings.options, "+
+				"or remove them in the controller UI.", live.Name, len(live.DhcpSettingsVO.Options)))
+		return false
 	}
 	if len(on) > 0 {
 		diags.AddError("Error updating LAN network", fmt.Sprintf(
