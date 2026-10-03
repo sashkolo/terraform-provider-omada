@@ -69,6 +69,16 @@ func newFakeLanController(t *testing.T) (*fakeLanController, *acctest.TestServer
 		data := []any{}
 		if !f.hidden {
 			for _, row := range f.rows {
+				// Like the live controller, the list shows the default
+				// network's stored name with a display suffix.
+				if primary, _ := row["primary"].(bool); primary {
+					shown := map[string]any{}
+					for k, v := range row {
+						shown[k] = v
+					}
+					shown["name"] = fmt.Sprint(row["name"]) + "(Default)"
+					row = shown
+				}
 				data = append(data, row)
 			}
 		}
