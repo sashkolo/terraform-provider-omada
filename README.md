@@ -29,6 +29,7 @@ forwarding.
 | `omada_port_forwarding` | Port forwarding rules |
 | `omada_firewall_setting` | Site firewall settings (one per site) |
 | `omada_attack_defense_setting` | Site attack-defence settings (one per site) |
+| `omada_upnp_setting` | Gateway UPnP: on or off, and its LAN networks and WAN ports (one per site) |
 
 Data source: `omada_sites`.
 

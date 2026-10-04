@@ -21,6 +21,7 @@ import (
 	"terraform-provider-omada/internal/service/ssid"
 	"terraform-provider-omada/internal/service/switchport"
 	"terraform-provider-omada/internal/service/switchportprofile"
+	"terraform-provider-omada/internal/service/upnpsetting"
 	"terraform-provider-omada/internal/service/wlangroup"
 	"time"
 
@@ -362,5 +363,6 @@ func (p *omadaProvider) Resources(_ context.Context) []func() resource.Resource 
 		apwlangroup.NewResource,
 		portforwarding.NewResource,
 		remotelogging.NewResource,
+		upnpsetting.NewResource,
 	}
 }
