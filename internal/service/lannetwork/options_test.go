@@ -231,3 +231,57 @@ variable "two_entries" {
 		},
 	})
 }
+
+// The live controller accepts isolation but never returns it in the list, so
+// a configured value must survive the read-back; v0.19.1 read the missing key
+// as false and failed the apply with an inconsistent result.
+func TestAcc_LanNetworkIsolationKeptWhenNotReturned(t *testing.T) {
+	f, ts := newFakeLanController(t)
+	f.omitIsolation = true
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{Config: ts.ProviderConfig + optionsTestLanNetwork("IoT", "", "")},
+			{
+				Config: ts.ProviderConfig + optionsTestLanNetwork("IoT", "isolation = true", ""),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("omada_lan_network.test", "isolation", "true"),
+					func(*terraform.State) error {
+						f.mu.Lock()
+						defer f.mu.Unlock()
+						if f.lastPatch["isolation"] != true {
+							return fmt.Errorf("update sent isolation=%v, want true", f.lastPatch["isolation"])
+						}
+						return nil
+					},
+				),
+			},
+		},
+	})
+}
+
+// Unset isolation is never sent: the value in state can't be told from a live
+// one, and sending it would undo isolation turned on in the UI.
+func TestAcc_LanNetworkIsolationNotSentWhenUnset(t *testing.T) {
+	f, ts := newFakeLanController(t)
+	f.omitIsolation = true
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{Config: ts.ProviderConfig + optionsTestLanNetwork("IoT", "", "")},
+			{
+				Config: ts.ProviderConfig + optionsTestLanNetwork("IoT renamed", "", ""),
+				Check: func(*terraform.State) error {
+					f.mu.Lock()
+					defer f.mu.Unlock()
+					if v, ok := f.lastPatch["isolation"]; ok {
+						return fmt.Errorf("update sent isolation=%v although the configuration doesn't set it", v)
+					}
+					return nil
+				},
+			},
+		},
+	})
+}

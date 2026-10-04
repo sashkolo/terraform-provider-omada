@@ -136,7 +136,9 @@ func (r *lanNetworkResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			},
 			"isolation": schema.BoolAttribute{
 				Description: "Network isolation: when on, devices on this network can't reach other networks. " +
-					"When unset, an update keeps the live value; a network that never set it reads as `false`.",
+					"Sent only when set. The controller's Open API doesn't return this setting, so the resource " +
+					"keeps the configured value and a change made in the UI is not detected. When unset, an " +
+					"update keeps the live value and the attribute reads as `false`.",
 				Optional: true,
 				Computed: true,
 				PlanModifiers: []planmodifier.Bool{
@@ -261,8 +263,13 @@ func (r *lanNetworkResource) Create(ctx context.Context, req resource.CreateRequ
 		return
 	}
 
+	createBody := expandLanNetwork(plan)
+	createBody.Isolation = configIsolation(ctx, req.Config, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	_, httpResp, callErr := r.client.WiredNetworkAPI.CreateLanNetwork(ctx, r.omadacId, plan.SiteId.ValueString()).
-		LanNetworkOpenApiVO(expandLanNetwork(plan)).Execute()
+		LanNetworkOpenApiVO(createBody).Execute()
 	env, ok := envelope.Decode(httpResp, callErr, &resp.Diagnostics, "creating LAN network")
 	if !ok {
 		return
@@ -376,7 +383,8 @@ func (r *lanNetworkResource) Update(ctx context.Context, req resource.UpdateRequ
 		return
 	}
 	body := expandLanNetwork(plan)
-	if !carryUnmodeled(&body, live, &resp.Diagnostics) {
+	body.Isolation = configIsolation(ctx, req.Config, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() || !carryUnmodeled(&body, live, &resp.Diagnostics) {
 		return
 	}
 

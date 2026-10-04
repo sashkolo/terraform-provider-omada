@@ -112,11 +112,23 @@ func flattenLanNetworkRead(m *lanNetworkResourceModel, r *lanNetworkReadRow) {
 	m.GatewaySubnet = types.StringPointerValue(r.GatewaySubnet)
 	m.Domain = types.StringPointerValue(r.Domain)
 	m.IgmpSnoopEnable = types.BoolValue(r.IgmpSnoopEnable)
-	// The controller omits isolation on a network that never set it; that
-	// is off.
-	m.Isolation = types.BoolValue(r.Isolation != nil && *r.Isolation)
+	m.Isolation = flattenIsolation(r.Isolation, m.Isolation)
 	m.Ipv6Enabled = types.BoolValue(r.LanNetworkIpv6Config != nil &&
 		r.LanNetworkIpv6Config.Enable != nil && *r.LanNetworkIpv6Config.Enable != 0)
 	m.InterfaceIds = flattenInterfaceIds(r.InterfaceIds, m.InterfaceIds)
 	m.DhcpSettings = flattenDhcpForModel(r.DhcpSettingsVO, m.DhcpSettings)
+}
+
+// flattenIsolation reads isolation when the controller returns it. The live
+// Open API list doesn't, even after it was set (found by a live write proof),
+// so the known value (configured, or from state) is kept; with none known the
+// network reads as off.
+func flattenIsolation(live *bool, known types.Bool) types.Bool {
+	if live != nil {
+		return types.BoolValue(*live)
+	}
+	if known.IsNull() || known.IsUnknown() {
+		return types.BoolValue(false)
+	}
+	return known
 }

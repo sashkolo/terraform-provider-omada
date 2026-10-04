@@ -31,9 +31,12 @@ type fakeLanController struct {
 	// dhcpDefault makes a create without DHCP settings read back the way the
 	// controller reports it: dhcpSettingsVO {enable: false, ...defaults}.
 	dhcpDefault bool
-	posts       int
-	patches     int
-	lastPatch   map[string]any // the body of the most recent update
+	// omitIsolation leaves isolation out of list reads, as the live
+	// controller does even after it was set.
+	omitIsolation bool
+	posts         int
+	patches       int
+	lastPatch     map[string]any // the body of the most recent update
 }
 
 func newFakeLanController(t *testing.T) (*fakeLanController, *acctest.TestServer) {
@@ -71,6 +74,15 @@ func newFakeLanController(t *testing.T) (*fakeLanController, *acctest.TestServer
 			for _, row := range f.rows {
 				// Like the live controller, the list shows the default
 				// network's stored name with a display suffix.
+				if f.omitIsolation {
+					shown := map[string]any{}
+					for k, v := range row {
+						if k != "isolation" {
+							shown[k] = v
+						}
+					}
+					row = shown
+				}
 				if primary, _ := row["primary"].(bool); primary {
 					shown := map[string]any{}
 					for k, v := range row {

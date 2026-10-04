@@ -72,7 +72,7 @@ output "example_network_id" {
 - `domain` (String) Domain name advertised for this network.
 - `igmp_snoop_enable` (Boolean) Enable IGMP snooping on this network. Defaults to `false` on create; when unset, an update keeps the live value.
 - `interface_ids` (List of String) Gateway LAN port IDs the network binds to (from the controller's WAN/LAN status endpoint). Required for purpose `interface`; the controller rejects creation with no ports.
-- `isolation` (Boolean) Network isolation: when on, devices on this network can't reach other networks. When unset, an update keeps the live value; a network that never set it reads as `false`.
+- `isolation` (Boolean) Network isolation: when on, devices on this network can't reach other networks. Sent only when set. The controller's Open API doesn't return this setting, so the resource keeps the configured value and a change made in the UI is not detected. When unset, an update keeps the live value and the attribute reads as `false`.
 - `purpose` (Number) LAN network purpose. `1` = interface (the default; a gateway-terminated network with a gateway_subnet), `0` = VLAN only. Changing this forces replacement.
 
 ### Read-Only

@@ -1,7 +1,12 @@
 package lannetwork
 
 import (
+	"context"
+
 	"github.com/Tohaker/omada-go-sdk/omada"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -86,16 +91,10 @@ func expandLanNetwork(plan lanNetworkResourceModel) omada.LanNetworkOpenApiVO {
 		purpose = plan.Purpose.ValueInt32()
 	}
 
-	// isolation is sent only when known; otherwise carryUnmodeled carries the
-	// live value on update, and create leaves the controller default.
-	var isolation *bool
-	if !plan.Isolation.IsNull() && !plan.Isolation.IsUnknown() {
-		isolation = plan.Isolation.ValueBoolPointer()
-	}
-
+	// isolation is set by the caller from the configuration only (see
+	// configIsolation): the plan's value may come from state.
 	return omada.LanNetworkOpenApiVO{
 		Name:            plan.Name.ValueString(),
-		Isolation:       isolation,
 		Purpose:         purpose,
 		Vlan:            &vlan,
 		VlanType:        &vlanType,
@@ -105,4 +104,18 @@ func expandLanNetwork(plan lanNetworkResourceModel) omada.LanNetworkOpenApiVO {
 		IgmpSnoopEnable: plan.IgmpSnoopEnable.ValueBool(),
 		DhcpSettingsVO:  expandDhcpSettings(plan.DhcpSettings),
 	}
+}
+
+// configIsolation returns isolation when the configuration sets it, else nil.
+// The controller doesn't return isolation, so a value that came from state
+// can't be told from a live one; sending it would undo a change made in the
+// UI. Unset, create leaves the controller default and update carries the live
+// value (carryUnmodeled).
+func configIsolation(ctx context.Context, cfg tfsdk.Config, diags *diag.Diagnostics) *bool {
+	var v types.Bool
+	diags.Append(cfg.GetAttribute(ctx, path.Root("isolation"), &v)...)
+	if v.IsNull() || v.IsUnknown() {
+		return nil
+	}
+	return v.ValueBoolPointer()
 }
