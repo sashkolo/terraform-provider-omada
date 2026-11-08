@@ -13,6 +13,7 @@ import (
 	"terraform-provider-omada/internal/service/firewallsetting"
 	"terraform-provider-omada/internal/service/gatewayaclorder"
 	"terraform-provider-omada/internal/service/ipgroup"
+	"terraform-provider-omada/internal/service/ipmacbinding"
 	"terraform-provider-omada/internal/service/ipportgroup"
 	"terraform-provider-omada/internal/service/lannetwork"
 	"terraform-provider-omada/internal/service/portforwarding"
@@ -364,5 +365,6 @@ func (p *omadaProvider) Resources(_ context.Context) []func() resource.Resource 
 		portforwarding.NewResource,
 		remotelogging.NewResource,
 		upnpsetting.NewResource,
+		ipmacbinding.NewResource,
 	}
 }

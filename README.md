@@ -26,6 +26,7 @@ forwarding.
 | `omada_switch_port_profile` | Switch port profiles: native and tagged networks, PoE, STP, loopback detection |
 | `omada_switch_port` | The profile assigned to a switch port |
 | `omada_dhcp_reservation` | Fixed-IP DHCP reservations, keyed by MAC |
+| `omada_gateway_ip_mac_binding` | Gateway IP-MAC bindings (static ARP entries), imported by MAC |
 | `omada_port_forwarding` | Port forwarding rules |
 | `omada_firewall_setting` | Site firewall settings (one per site) |
 | `omada_attack_defense_setting` | Site attack-defence settings (one per site) |
@@ -50,6 +51,11 @@ gives the import ID format.
   `omada_switch_port` doesn't change the port, so move the port to another
   profile first, in an earlier apply or with `create_before_destroy` on the
   profile.
+- **IP-MAC bindings never turn on ARP spoofing defense.**
+  `omada_gateway_ip_mac_binding` manages entries of the binding table only. It
+  never reads or writes the site-wide setting that can restrict the gateway to
+  bound clients, and it refuses to create an entry whose MAC or IP another
+  entry already binds (import that entry instead).
 - **State follows the controller.** An object deleted outside Terraform is
   dropped from state, and one that is still there is never dropped on a
   transient error.
