@@ -7,6 +7,9 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
+	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 )
 
 // gridResponse wraps one or more reservation rows in the controller's paged grid
@@ -238,6 +241,109 @@ func TestAcc_DhcpReservationResource_MacSeparatorNormalization(t *testing.T) {
 					// mac is preserved as configured (not overwritten by the read).
 					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "mac", "00-00-5E-00-53-31"),
 				),
+			},
+		},
+	})
+}
+
+// TestAcc_DhcpReservationResource_NetworkMove is the regression test for
+// moving a reservation to another network in place. net_name is computed from
+// the network the controller reports; it must be planned as unknown when
+// net_id changes, or the apply fails with "inconsistent result after apply"
+// because the plan still carried the old network's name.
+func TestAcc_DhcpReservationResource_NetworkMove(t *testing.T) {
+	ts := acctest.NewTestServer(t)
+	mux := ts.Mux
+
+	networks := map[string]string{
+		"network-a-id": "Network A",
+		"network-b-id": "Network B",
+	}
+	row := map[string]any{
+		"id":      "move-reservation-id",
+		"mac":     "00-00-5E-00-53-41",
+		"ip":      "192.0.2.41",
+		"netId":   "network-a-id",
+		"netName": "Network A",
+		"status":  true,
+	}
+
+	mux.HandleFunc("POST /openapi/v1/{omadacId}/sites/{siteId}/setting/service/dhcp", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, `{"errorCode":0,"msg":"Success.","result":{"id":"move-reservation-id"}}`)
+	})
+	mux.HandleFunc("GET /openapi/v1/{omadacId}/sites/{siteId}/setting/service/dhcp", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, gridResponse(row))
+	})
+	// The modify handler moves the row to the requested network and reports
+	// that network's name, as the controller does.
+	mux.HandleFunc("PATCH /openapi/v1/{omadacId}/sites/{siteId}/setting/service/dhcp/{mac}", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Ip    string `json:"ip"`
+			NetId string `json:"netId"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		name, ok := networks[req.NetId]
+		if !ok {
+			http.Error(w, "unknown network", http.StatusBadRequest)
+			return
+		}
+		row["ip"] = req.Ip
+		row["netId"] = req.NetId
+		row["netName"] = name
+		writeJSON(w, `{ "errorCode": 0, "msg": "" }`)
+	})
+	mux.HandleFunc("DELETE /openapi/v1/{omadacId}/sites/{siteId}/setting/service/dhcp/{mac}", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, `{ "errorCode": 0, "msg": "" }`)
+	})
+
+	config := func(ip, netID string) string {
+		return ts.ProviderConfig + `
+		resource "omada_dhcp_reservation" "test" {
+			site_id = "test-site-id"
+			mac     = "00-00-5E-00-53-41"
+			ip      = "` + ip + `"
+			net_id  = "` + netID + `"
+		}
+		`
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: config("192.0.2.41", "network-a-id"),
+				Check:  resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "net_name", "Network A"),
+			},
+			// Move to another network in place: no replacement, and the
+			// new network's name is read back.
+			{
+				Config: config("198.51.100.41", "network-b-id"),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction("omada_dhcp_reservation.test", plancheck.ResourceActionUpdate),
+						plancheck.ExpectUnknownValue("omada_dhcp_reservation.test", tfjsonpath.New("net_name")),
+					},
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "reservation_id", "move-reservation-id"),
+					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "net_id", "network-b-id"),
+					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "net_name", "Network B"),
+					resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "ip", "198.51.100.41"),
+				),
+			},
+			// An IP-only change on the same network keeps the known name in
+			// the plan (no needless "known after apply").
+			{
+				Config: config("198.51.100.42", "network-b-id"),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectKnownValue("omada_dhcp_reservation.test", tfjsonpath.New("net_name"), knownvalue.StringExact("Network B")),
+					},
+				},
+				Check: resource.TestCheckResourceAttr("omada_dhcp_reservation.test", "net_name", "Network B"),
 			},
 		},
 	})
