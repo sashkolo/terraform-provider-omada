@@ -111,10 +111,10 @@ func (r *reservationResource) Schema(_ context.Context, _ resource.SchemaRequest
 			},
 			"net_name": schema.StringAttribute{
 				Description: "Name of the LAN network the reservation belongs to, as reported by the " +
-					"controller.",
+					"controller. Known after apply when `net_id` changes.",
 				Computed: true,
 				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
+					netNameFollowsNetID{},
 				},
 			},
 			"description": schema.StringAttribute{

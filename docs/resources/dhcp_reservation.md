@@ -68,7 +68,7 @@ output "porch_camera_reservation_id" {
 
 ### Read-Only
 
-- `net_name` (String) Name of the LAN network the reservation belongs to, as reported by the controller.
+- `net_name` (String) Name of the LAN network the reservation belongs to, as reported by the controller. Known after apply when `net_id` changes.
 - `reservation_id` (String) Reservation ID assigned by the controller. Informational only: the reservation is addressed by MAC, not by this id.
 
 ## Import

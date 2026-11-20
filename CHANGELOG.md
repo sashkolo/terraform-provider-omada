@@ -1,3 +1,12 @@
+## Unreleased
+
+FIXES:
+- `omada_dhcp_reservation`: moving a reservation to another network by
+  changing `net_id` no longer fails with "Provider produced inconsistent
+  result after apply". `net_name` used to be planned from the old state;
+  it is now known after apply whenever `net_id` changes, and still planned
+  from state when it doesn't.
+
 ## 0.17.0
 
 FIXES (switch-port guardrails):
